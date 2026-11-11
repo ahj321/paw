@@ -118,12 +118,26 @@ def _screen_size():
             pass
     return pyautogui.size()
 
+
+def _dpi_scale() -> float:
+    """Windows 显示缩放比例（96dpi = 1.0，150% = 1.5）。截图与坐标都用物理像素。"""
+    if not sys.platform.startswith("win"):
+        return 1.0
+    try:
+        hdc = ctypes.windll.user32.GetDC(0)
+        dpi = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)  # LOGPIXELSX
+        ctypes.windll.user32.ReleaseDC(0, hdc)
+        return round(dpi / 96.0, 2) if dpi else 1.0
+    except Exception:
+        return 1.0
+
 # 急停：命令行下靠鼠标左右键同按；Web 看板点「急停」时会置上这个标记。
 STOP_FLAG = threading.Event()
 
 LEVEL_ORDER = {"browse": 0, "safe": 1, "full": 2}
 CMD_LEVEL = {
     "size": "browse", "shot": "browse", "windows": "browse", "find": "browse",
+    "scale": "browse",
     "launch": "browse", "move": "browse",
     "desks": "browse", "desk": "browse", "screens": "browse", "watch": "browse",
     "focus": "browse", "wait": "browse", "goto": "browse",
@@ -202,6 +216,8 @@ def _where(x: int, y: int) -> str:
 def _plan_text(cmd: str, args: list) -> str:
     if cmd == "size":
         return "读取屏幕分辨率（不改任何东西）"
+    if cmd == "scale":
+        return "读取显示缩放比例（不改任何东西）"
     if cmd == "shot":
         return f"截屏并保存到 {args[0] if args else 'screen.png'}（不改任何东西）"
     if cmd == "windows":
@@ -662,6 +678,12 @@ def run_one(
     try:
         if cmd == "size":
             print(_screen_size())
+
+        elif cmd == "scale":
+            w, h = _screen_size()
+            s = _dpi_scale()
+            print(f"缩放 {s:.2f}x（{int(s * 100)}%）：物理 {w}x{h}，逻辑 {int(w / s)}x{int(h / s)}")
+            print("shot 与 click 都用物理像素；按缩略图/预览图估坐标时，先乘这个比例。")
 
         elif cmd == "shot":
             rest = args
