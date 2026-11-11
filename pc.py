@@ -12,6 +12,7 @@ ai-pc-control —— 用命令行控制鼠标和键盘，配合视觉模型做 W
     python pc.py launch https://bilibili.com  # 打开网页
     python pc.py launch notepad               # 打开程序
     python pc.py focus "Edge"               # 把标题含 Edge 的窗口切到前台
+    python pc.py goto https://bilibili.com   # 地址栏打开（输完等 0.6s 再回车）
     python pc.py wait 2                     # 等 2 秒（页面/动画加载）
     python pc.py click 960 540              # 左键单击
     python pc.py type "hello"               # 输入文字
@@ -72,7 +73,7 @@ except Exception:
     pass
 
 pyautogui.FAILSAFE = False
-pyautogui.PAUSE = 0.3
+pyautogui.PAUSE = 0.15
 
 # 急停：命令行下靠鼠标左右键同按；Web 看板点「急停」时会置上这个标记。
 STOP_FLAG = threading.Event()
@@ -82,8 +83,8 @@ CMD_LEVEL = {
     "size": "browse", "shot": "browse", "windows": "browse", "find": "browse",
     "launch": "browse", "move": "browse",
     "desks": "browse", "desk": "browse", "screens": "browse", "watch": "browse",
-    "focus": "browse", "wait": "browse",
-    "click": "safe", "dclick": "safe", "rclick": "safe", "scroll": "safe",
+    "focus": "browse", "wait": "browse", "goto": "browse",
+    "click": "safe", "dclick": "safe", "rclick": "safe", "scroll": "safe", "drag": "safe",
     "type": "safe", "key": "safe", "hotkey": "safe",
 }
 ALL_CMDS = list(CMD_LEVEL.keys())
@@ -141,6 +142,8 @@ def _plan_text(cmd: str, args: list) -> str:
         return f"打开：{args[0] if args else '?'}"
     if cmd == "focus":
         return f"把标题含「{args[0] if args else '?'}」的窗口切到前台（不点击）"
+    if cmd == "goto":
+        return f"在浏览器地址栏打开：{args[0] if args else '?'}（输完等 0.6s 再回车）"
     if cmd == "wait":
         return f"等 {args[0] if args else '?'} 秒（什么都不做，等页面/动画加载）"
     if cmd == "move":
@@ -275,6 +278,26 @@ def _list_windows() -> None:
         title = (w.title or "").strip()
         if title:
             print(f"{w.left:>6} {w.top:>6} {w.width:>6} {w.height:>6}  {title}")
+
+
+def _goto_cmd(args: list) -> int:
+    """在浏览器地址栏打开 URL：Ctrl+L → 输入 → 等下拉稳定 → 回车。
+
+    直接「Ctrl+L、type、enter」三连最容易翻车：地址栏的自动补全下拉还没收起来，
+    回车会被它吃掉，页面不动。这里在输入后固定等 0.6s 再回车。
+    """
+    if not args:
+        print("用法：pc.py goto <url>", file=sys.stderr)
+        return 2
+    url = args[0]
+    pyautogui.hotkey("ctrl", "l")
+    time.sleep(0.25)
+    pyautogui.typewrite(url, interval=0.01)
+    time.sleep(0.6)
+    pyautogui.press("enter")
+    time.sleep(0.3)
+    print("goto", url)
+    return 0
 
 
 def _focus_cmd(args: list) -> int:
@@ -504,10 +527,38 @@ def run_one(cmd: str, args: list, level: str, show_plan: bool, dry_run: bool) ->
             print(pyautogui.size())
 
         elif cmd == "shot":
-            out = args[0] if args else "screen.png"
+            rest = args
+            crop = None
+            jpg = False
+            out = "screen.png"
+            i = 0
+            while i < len(rest):
+                if rest[i] == "--crop" and i + 1 < len(rest):
+                    crop = tuple(int(v) for v in rest[i + 1].split(","))
+                    i += 2
+                elif rest[i] == "--jpg":
+                    jpg = True
+                    i += 1
+                else:
+                    out = rest[i]
+                    i += 1
             img = pyautogui.screenshot()
-            img.save(out)
+            if crop:
+                img = img.crop(crop)
+            if jpg:
+                img = img.convert("RGB")
+                img.save(out, quality=88)
+            else:
+                img.save(out)
             print(out, img.size)
+
+        elif cmd == "drag":
+            x1, y1, x2, y2 = (int(v) for v in args[:4])
+            dur = float(args[4]) if len(args) > 4 else 0.4
+            pyautogui.moveTo(x1, y1)
+            time.sleep(0.05)
+            pyautogui.dragTo(x2, y2, duration=dur, button="left")
+            print("dragged", (x1, y1), "->", (x2, y2))
 
         elif cmd == "launch":
             _do_launch(args[0])
@@ -515,6 +566,9 @@ def run_one(cmd: str, args: list, level: str, show_plan: bool, dry_run: bool) ->
 
         elif cmd == "focus":
             return _focus_cmd(args)
+
+        elif cmd == "goto":
+            return _goto_cmd(args)
 
         elif cmd == "wait":
             secs = float(args[0]) if args else 1.0
@@ -609,8 +663,9 @@ def main() -> int:
         action="store_true",
         help="run 时并行执行「打开/查看」类步骤（鼠标键盘动作仍串行，否则会打架）",
     )
-    a = ap.parse_args()
-
+    a, extra = ap.parse_known_args()
+    if extra:
+        a.args = list(a.args) + list(extra)
     if a.delay:
         time.sleep(a.delay)
     if a.pause >= 0:
