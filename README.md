@@ -1,7 +1,5 @@
 ﻿# ai-pc-control
 
-本项目当前版本 **v1.0**（更新记录见 [CHANGELOG.md](CHANGELOG.md)）。
-
 用命令行控制鼠标和键盘，给「能看图的模型 + 能执行命令的 agent」当手用。
 
 > 本项目由 deepseek-V4.1-Flash-1017 生成。
@@ -144,4 +142,8 @@ python serve.py --host 0.0.0.0   # 让局域网能访问
 ## License
 
 MIT
+
+---
+
+版本 **v1.0**，更新记录见 [CHANGELOG.md](CHANGELOG.md)。
 
