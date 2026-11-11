@@ -1,9 +1,10 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 ai-pc-control —— 用命令行控制鼠标和键盘，配合视觉模型做 Windows 桌面自动化。
 
 一个最小、无依赖滥用的命令行工具：截图 / 点击 / 输入 / 打开页面。
+支持一条命令做一件事，也支持一次跑一串（run 子命令）。
 
 示例：
     python pc.py size                       # 屏幕分辨率
@@ -14,26 +15,33 @@ ai-pc-control —— 用命令行控制鼠标和键盘，配合视觉模型做 W
     python pc.py type "hello"               # 输入文字
     python pc.py click 960 540 --dry-run    # 只打印行动表，不执行
 
+一次做多件事（每行一条，支持引号与 # 注释）：
+    python pc.py run steps.txt
+    python pc.py run -            # 从标准输入读
+
+steps.txt 示例：
+    launch notepad
+    click 300 200
+    type "hello"
+    hotkey ctrl s
+
 权限等级（--level 或环境变量 PC_LEVEL，默认 safe）：
     browse 末级：只能看、只能打开页面/程序（shot/size/windows/find/launch/move）
     safe   次级：再加点击、滚动、打字、按键；
            但命中「付款 / 注册注销 / 删除改东西」这类危险动作时拒绝
     full   最高级：允许一切
 
-行动表：每次执行前会打印一行「计划：…」，说明接下来要做什么；
+行动表：每个动作前会打印一行「计划：…」，说明接下来要做什么；
 用 --no-plan 关掉，用 --dry-run 只看计划不执行（预览模式）。
 
 安全：动作执行前检查鼠标左右键是否同时按住——同时按住即视为急停。
 所有动作之间默认间隔 0.3s。
-
-注意：safe 级的危险动作拦截是「按命令和文字关键词」判断的尽力而为，
-不是系统级 ACL——它拦得住明显的「付款 / 删除 / 注销」，但不认识所有变体。
-真正重要的账号操作，还是请人来做。
 """
 
 import argparse
 import ctypes
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -51,6 +59,7 @@ CMD_LEVEL = {
     "click": "safe", "dclick": "safe", "rclick": "safe", "scroll": "safe",
     "type": "safe", "key": "safe", "hotkey": "safe",
 }
+ALL_CMDS = list(CMD_LEVEL.keys())
 
 # safe 级下，文本里出现这些词就拒绝（付款 / 注册注销 / 删改东西）
 DANGER_WORDS = [
@@ -125,15 +134,145 @@ def _do_launch(target: str) -> None:
             subprocess.Popen(target, shell=False)  # noqa: S603 - 用户明确要启动的程序
 
 
+def _type_text(text: str) -> None:
+    if any("\u4e00" <= ch <= "\u9fff" for ch in text):
+        import tkinter as tk
+
+        root = tk.Tk()
+        root.withdraw()
+        root.clipboard_clear()
+        root.clipboard_append(text)
+        root.update()
+        pyautogui.hotkey("ctrl", "v")
+        root.destroy()
+    else:
+        pyautogui.typewrite(text, interval=0.02)
+
+
+def _list_windows() -> None:
+    import pygetwindow as gw
+
+    for w in gw.getAllWindows():
+        title = (w.title or "").strip()
+        if title:
+            print(f"{w.left:>6} {w.top:>6} {w.width:>6} {w.height:>6}  {title}")
+
+
+def run_one(cmd: str, args: list, level: str, show_plan: bool, dry_run: bool) -> int:
+    """执行一条动作。返回 0 成功；非 0 表示失败/被拦截。"""
+    if cmd not in CMD_LEVEL:
+        print(f"未知动作：{cmd}", file=sys.stderr)
+        return 2
+
+    if not _level_allows(level, cmd):
+        print(
+            f"权限不足：当前等级 {level}，{cmd} 需要 {CMD_LEVEL[cmd]} 级权限",
+            file=sys.stderr,
+        )
+        return 3
+
+    payload = " ".join(args)
+    if level == "safe":
+        hits = _danger_hits(payload)
+        if hits:
+            print(
+                f"安全拦截：这一步看起来涉及「{hits[0]}」，safe 级不允许——"
+                "要人工确认，或改用 --level full",
+                file=sys.stderr,
+            )
+            return 4
+
+    if show_plan:
+        print(f"计划：{_plan_text(cmd, args)}", file=sys.stderr)
+
+    if dry_run:
+        return 0
+
+    if cmd not in ("size", "shot", "windows") and _emergency_pressed():
+        print("急停：检测到鼠标左右键同时按下，已中止", file=sys.stderr)
+        return 1
+
+    try:
+        if cmd == "size":
+            print(pyautogui.size())
+
+        elif cmd == "shot":
+            out = args[0] if args else "screen.png"
+            img = pyautogui.screenshot()
+            img.save(out)
+            print(out, img.size)
+
+        elif cmd == "launch":
+            _do_launch(args[0])
+            print("launched", args[0])
+
+        elif cmd == "click":
+            pyautogui.click(int(args[0]), int(args[1]))
+            print("clicked", args[0], args[1])
+
+        elif cmd == "dclick":
+            pyautogui.doubleClick(int(args[0]), int(args[1]))
+            print("double-clicked", args[0], args[1])
+
+        elif cmd == "rclick":
+            pyautogui.rightClick(int(args[0]), int(args[1]))
+            print("right-clicked", args[0], args[1])
+
+        elif cmd == "move":
+            pyautogui.moveTo(int(args[0]), int(args[1]), duration=0.3)
+            print("moved", args[0], args[1])
+
+        elif cmd == "type":
+            _type_text(" ".join(args))
+            print("typed")
+
+        elif cmd == "key":
+            pyautogui.press(args[0])
+            print("key", args[0])
+
+        elif cmd == "hotkey":
+            pyautogui.hotkey(*args)
+            print("hotkey", " ".join(args))
+
+        elif cmd == "scroll":
+            pyautogui.scroll(int(args[0]))
+            print("scrolled", args[0])
+
+        elif cmd == "find":
+            conf = float(args[1]) if len(args) > 1 else 0.85
+            loc = pyautogui.locateOnScreen(args[0], confidence=conf)
+            print(loc if loc else "not found")
+
+        elif cmd == "windows":
+            _list_windows()
+
+    except pyautogui.FailSafeException:
+        print("failsafe: 已中止", file=sys.stderr)
+        return 1
+    except (IndexError, ValueError) as e:
+        print(f"参数错误：{e}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def _read_steps(path: str) -> list:
+    if path == "-":
+        text = sys.stdin.read()
+    else:
+        with open(path, "r", encoding="utf-8") as f:
+            text = f.read()
+    steps = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        steps.append(line)
+    return steps
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="control the mouse and keyboard from the CLI")
-    ap.add_argument(
-        "cmd",
-        choices=[
-            "size", "shot", "click", "dclick", "rclick", "move", "launch",
-            "launch", "type", "key", "hotkey", "scroll", "find", "windows",
-        ],
-    )
+    ap.add_argument("cmd", choices=ALL_CMDS + ["run"])
     ap.add_argument("args", nargs="*")
     ap.add_argument("--delay", type=float, default=0.0, help="动作前等待秒数")
     ap.add_argument(
@@ -149,123 +288,32 @@ def main() -> int:
     if a.delay:
         time.sleep(a.delay)
 
-    if not _level_allows(a.level, a.cmd):
-        print(
-            f"权限不足：当前等级 {a.level}，{a.cmd} 需要 {CMD_LEVEL[a.cmd]} 级权限",
-            file=sys.stderr,
-        )
-        return 3
-
-    payload = " ".join(a.args)
-    if a.level == "safe":
-        hits = _danger_hits(payload)
-        if hits:
-            print(
-                f"安全拦截：这一步看起来涉及「{hits[0]}」，safe 级不允许——"
-                "要人工确认，或改用 --level full",
-                file=sys.stderr,
-            )
-            return 4
-
-    if not a.no_plan:
-        print(f"计划：{_plan_text(a.cmd, a.args)}", file=sys.stderr)
-
-    if a.dry_run:
-        print("（dry-run：只预览，未执行）", file=sys.stderr)
-        return 0
-
-    if a.cmd not in ("size", "shot", "windows") and _emergency_pressed():
-        print("急停：检测到鼠标左右键同时按下，已中止", file=sys.stderr)
-        return 1
-
     try:
-        if a.cmd == "size":
-            print(pyautogui.size())
+        if a.cmd == "run":
+            if not a.args:
+                print("用法：pc.py run <steps.txt|->", file=sys.stderr)
+                return 2
+            steps = _read_steps(a.args[0])
+            if not steps:
+                print("没有可执行的步骤", file=sys.stderr)
+                return 2
+            for idx, line in enumerate(steps, 1):
+                parts = shlex.split(line)
+                cmd, rest = parts[0], parts[1:]
+                print(f"[{idx}/{len(steps)}] {line}", file=sys.stderr)
+                rc = run_one(cmd, rest, a.level, not a.no_plan, a.dry_run)
+                if rc != 0:
+                    print(f"第 {idx} 步失败（返回码 {rc}），已停止", file=sys.stderr)
+                    return rc
+            print(f"完成，共 {len(steps)} 步", file=sys.stderr)
+            return 0
 
-        elif a.cmd == "shot":
-            out = a.args[0] if a.args else "screen.png"
-            img = pyautogui.screenshot()
-            img.save(out)
-            print(out, img.size)
-
-        elif a.cmd == "launch":
-            _do_launch(a.args[0])
-            print("launched", a.args[0])
-
-        elif a.cmd == "click":
-            pyautogui.click(int(a.args[0]), int(a.args[1]))
-            print("clicked", a.args[0], a.args[1])
-
-        elif a.cmd == "dclick":
-            pyautogui.doubleClick(int(a.args[0]), int(a.args[1]))
-            print("double-clicked", a.args[0], a.args[1])
-
-        elif a.cmd == "rclick":
-            pyautogui.rightClick(int(a.args[0]), int(a.args[1]))
-            print("right-clicked", a.args[0], a.args[1])
-
-        elif a.cmd == "move":
-            pyautogui.moveTo(int(a.args[0]), int(a.args[1]), duration=0.3)
-            print("moved", a.args[0], a.args[1])
-
-        elif a.cmd == "type":
-            text = " ".join(a.args)
-            if any("\u4e00" <= ch <= "\u9fff" for ch in text):
-                import tkinter as tk
-
-                root = tk.Tk()
-                root.withdraw()
-                root.clipboard_clear()
-                root.clipboard_append(text)
-                root.update()
-                pyautogui.hotkey("ctrl", "v")
-                root.destroy()
-            else:
-                pyautogui.typewrite(text, interval=0.02)
-            print("typed")
-
-        elif a.cmd == "key":
-            pyautogui.press(a.args[0])
-            print("key", a.args[0])
-
-        elif a.cmd == "hotkey":
-            pyautogui.hotkey(*a.args)
-            print("hotkey", " ".join(a.args))
-
-        elif a.cmd == "scroll":
-            pyautogui.scroll(int(a.args[0]))
-            print("scrolled", a.args[0])
-
-        elif a.cmd == "find":
-            conf = float(a.args[1]) if len(a.args) > 1 else 0.85
-            loc = pyautogui.locateOnScreen(a.args[0], confidence=conf)
-            print(loc if loc else "not found")
-
-        elif a.cmd == "windows":
-            try:
-                import pygetwindow as gw
-            except ImportError:
-                print("需要 pygetwindow：pip install pygetwindow", file=sys.stderr)
-                return 1
-            for w in gw.getAllWindows():
-                title = (w.title or "").strip()
-                if title:
-                    print(f"{w.left:>6} {w.top:>6} {w.width:>6} {w.height:>6}  {title}")
+        return run_one(a.cmd, a.args, a.level, not a.no_plan, a.dry_run)
 
     except KeyboardInterrupt:
         print("interrupted", file=sys.stderr)
         return 130
-    except pyautogui.FailSafeException:
-        print("failsafe: 已中止", file=sys.stderr)
-        return 1
-    except (IndexError, ValueError) as e:
-        print(f"参数错误：{e}", file=sys.stderr)
-        return 2
-    return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-
