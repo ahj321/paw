@@ -1,7 +1,8 @@
 # 一次跑一串动作：python pc.py run steps.txt
 # 每行一条；支持引号与 # 注释；每一步都过同样的权限检查
+# 行尾的 # 备注会显示在行动表里，方便你知道这一步在干什么
 
 launch notepad
-click 300 200
+click 300 200      # 点编辑区，确认光标在文档里
 type "hello"
-hotkey ctrl s
+hotkey ctrl s      # 保存

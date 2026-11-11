@@ -124,6 +124,38 @@ def _danger_hits(text: str) -> list:
     return [w for w in DANGER_WORDS if w in low]
 
 
+class _POINT(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+
+def _window_at(x: int, y: int) -> str:
+    """返回屏幕坐标处所在窗口的标题，用来说明「点的是哪个程序的什么」。"""
+    if not sys.platform.startswith("win"):
+        return ""
+    try:
+        user32 = ctypes.windll.user32
+        user32.WindowFromPoint.argtypes = [_POINT]
+        user32.WindowFromPoint.restype = ctypes.c_void_p
+        hwnd = user32.WindowFromPoint(_POINT(int(x), int(y)))
+        if not hwnd:
+            return ""
+        root = user32.GetAncestor(hwnd, 2)  # GA_ROOT：取最外层窗口
+        if not root:
+            root = hwnd
+        n = user32.GetWindowTextLengthW(root)
+        buf = ctypes.create_unicode_buffer(n + 1)
+        user32.GetWindowTextW(root, buf, n + 1)
+        return buf.value.strip()
+    except Exception:
+        return ""
+
+
+def _where(x: int, y: int) -> str:
+    """行动表里的位置说明：这个坐标落在哪个窗口上。"""
+    win = _window_at(x, y)
+    return f"（所在窗口：{win}）" if win else ""
+
+
 def _plan_text(cmd: str, args: list) -> str:
     if cmd == "size":
         return "读取屏幕分辨率（不改任何东西）"
@@ -147,13 +179,17 @@ def _plan_text(cmd: str, args: list) -> str:
     if cmd == "wait":
         return f"等 {args[0] if args else '?'} 秒（什么都不做，等页面/动画加载）"
     if cmd == "move":
-        return f"把鼠标移动到 ({args[0]}, {args[1]})，不点击"
+        x, y = int(args[0]), int(args[1])
+        return f"把鼠标移动到 ({x}, {y}){_where(x, y)}，不点击"
     if cmd == "click":
-        return f"在 ({args[0]}, {args[1]}) 单击鼠标左键"
+        x, y = int(args[0]), int(args[1])
+        return f"在 ({x}, {y}) 单击鼠标左键{_where(x, y)}"
     if cmd == "dclick":
-        return f"在 ({args[0]}, {args[1]}) 双击鼠标左键"
+        x, y = int(args[0]), int(args[1])
+        return f"在 ({x}, {y}) 双击鼠标左键{_where(x, y)}"
     if cmd == "rclick":
-        return f"在 ({args[0]}, {args[1]}) 单击鼠标右键"
+        x, y = int(args[0]), int(args[1])
+        return f"在 ({x}, {y}) 单击鼠标右键{_where(x, y)}"
     if cmd == "scroll":
         return f"滚动滚轮 {args[0]} 格"
     if cmd == "type":
@@ -477,7 +513,9 @@ def _desk_cmd(args: list) -> int:
         return 1
 
 
-def run_one(cmd: str, args: list, level: str, show_plan: bool, dry_run: bool) -> int:
+def run_one(
+    cmd: str, args: list, level: str, show_plan: bool, dry_run: bool, note: str = ""
+) -> int:
     """执行一条动作。返回 0 成功；非 0 表示失败/被拦截。"""
     if STOP_FLAG.is_set():
         print("急停中：拒绝执行（在 Web 看板点「解除急停」或重启进程）", file=sys.stderr)
@@ -506,7 +544,10 @@ def run_one(cmd: str, args: list, level: str, show_plan: bool, dry_run: bool) ->
             return 4
 
     if show_plan:
-        print(f"计划：{_plan_text(cmd, args)}", file=sys.stderr)
+        plan = _plan_text(cmd, args)
+        if note:
+            plan = f"{plan}  · {note}"
+        print(f"计划：{plan}", file=sys.stderr)
 
     if dry_run:
         return 0
@@ -626,6 +667,15 @@ def run_one(cmd: str, args: list, level: str, show_plan: bool, dry_run: bool) ->
     return 0
 
 
+def _split_step(line: str):
+    """把一行 steps 拆成 (命令, 参数, 备注)。行内 # 之后是备注，会显示在行动表里。"""
+    code, _, note = line.partition("#")
+    parts = shlex.split(code.strip())
+    if not parts:
+        return "", [], note.strip()
+    return parts[0], parts[1:], note.strip()
+
+
 def _read_steps(path: str) -> list:
     if path == "-":
         text = sys.stdin.read()
@@ -637,7 +687,9 @@ def _read_steps(path: str) -> list:
         line = line.strip().lstrip("\ufeff")
         if not line or line.startswith("#"):
             continue
-        steps.append(line)
+        cmd, args, note = _split_step(line)
+        if cmd:
+            steps.append((line, cmd, args, note))
     return steps
 
 
@@ -685,7 +737,7 @@ def main() -> int:
 
             if a.parallel:
                 mouse_cmds = {"click", "dclick", "rclick", "scroll", "type", "key", "hotkey", "move"}
-                bad = [s for s in steps if shlex.split(s)[0] in mouse_cmds]
+                bad = [s[1] for s in steps if s[1] in mouse_cmds]
                 if bad:
                     print(
                         "并行模式只并行「打开 / 查看」类步骤；鼠标键盘动作必须串行"
@@ -697,10 +749,9 @@ def main() -> int:
                 from concurrent.futures import ThreadPoolExecutor
 
                 def _one(item):
-                    idx, line = item
-                    parts = shlex.split(line)
+                    idx, (line, cmd, args, note) = item
                     print(f"[{idx}/{len(steps)}] {line}", file=sys.stderr)
-                    return run_one(parts[0], parts[1:], a.level, not a.no_plan, a.dry_run)
+                    return run_one(cmd, args, a.level, not a.no_plan, a.dry_run, note)
 
                 with ThreadPoolExecutor(max_workers=min(8, len(steps))) as ex:
                     results = list(ex.map(_one, enumerate(steps, 1)))
@@ -711,11 +762,9 @@ def main() -> int:
                 print(f"完成，共 {len(steps)} 步（并行）", file=sys.stderr)
                 return 0
 
-            for idx, line in enumerate(steps, 1):
-                parts = shlex.split(line)
-                cmd, rest = parts[0], parts[1:]
+            for idx, (line, cmd, args, note) in enumerate(steps, 1):
                 print(f"[{idx}/{len(steps)}] {line}", file=sys.stderr)
-                rc = run_one(cmd, rest, a.level, not a.no_plan, a.dry_run)
+                rc = run_one(cmd, args, a.level, not a.no_plan, a.dry_run, note)
                 if rc != 0:
                     print(f"第 {idx} 步失败（返回码 {rc}），已停止", file=sys.stderr)
                     return rc
