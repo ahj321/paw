@@ -1,79 +1,73 @@
 # ai-pc-control
 
-用命令行控制鼠标和键盘的小工具，给「能看图的模型 + 能执行命令的 agent」当手用。
+用命令行控制鼠标和键盘，给「能看图的模型 + 能执行命令的 agent」当手用。
 
 > 本项目由 deepseek-V4.1-Flash-1017 生成。
 
-暂时没有后台常驻服务，没有截图上传，没有依赖一堆框架——主体只有一个 `pc.py`，跑一条命令做一件事；想看它干活时再手动起一个本地看板（`serve.py`，可选）。
+暂时没有后台常驻服务，也没有截图上传。主体就是一个 `pc.py`，跑一条命令做一件事；想看它干活时，再手动起一个本地看板（`serve.py`，可选）。
 
 ## 为什么
 
-现在的桌面自动化方案大多很麻烦：装桌面客户端、配 MCP、接一堆框架，或者只能用某个厂商的云服务——对「只想给能看图的 agent 配一双手」来说太重了。
+同类工具大多比较麻烦。我（一个高一学生）只想要一双能听命令的手，就自己写了这个：用 DSH（DeepSeek Harness）配合 DeepSeek V4.1 完成，代码不大，看得懂也改得动。
 
-所以我（一个高一学生）自己写了一个：核心用 DSH（DeepSeek Harness）配合 DeepSeek V4.1 完成，代码量小、看得懂、也改得动。
-
-工具本身可以离线跑；但如果你用云端模型（DeepSeek API 这类）来下命令，那一环仍然需要联网——后面「安全」一段写了想整条链路离线该换什么。
-
-它只做三件事：截一张图、点一下、打一行字，并且保持「人能看懂、人敢运行」。
+工具本身可以离线跑；用云端模型（DeepSeek API 这类）来下命令时，那一环需要联网。想整条链路都在本机，就得换本地视觉模型，代价是更吃硬件、更慢。
 
 ## 项目结构
 
 ```
-pc.py               工具本体，所有动作都在这里
-serve.py            可选的本地看板（每屏在干什么 / 急停 / 动作）
-steps.txt.example   run 用的一串动作示例（复制成自己的 steps.txt 就能跑）
+pc.py               工具本体
+serve.py            可选的本地看板
+steps.txt.example   一串动作的示例
 requirements.txt
 LICENSE
 ```
 
 ## 设计取舍
 
-- **目前只有命令行**：给 agent 用不需要点界面，一条命令做一件事；要盯着看时，有可选的本地看板（`serve.py`），和命令行共用同一套动作与权限。常驻、托盘之类的形态以后可能加，先把最小可用形态做稳。
-- **一次可以跑一串**：`run steps.txt` 里放多条动作，省去反复调用；每一步都过同样的权限检查和拦截。
-- **默认 `safe`**：这个工具是给会看图的模型当手的，手越灵活越需要刹车，权限分级比单纯信任重要。
-- **行动表**：为了出问题时知道卡在哪一步——每一步都先说要做什么，`--dry-run` 时只预览。
+- **目前只有命令行**：给 agent 用不需要界面。要盯着看时，起 `serve.py`，它和命令行共用同一套动作与权限。常驻、托盘这类形态以后可能加。
+- **一次可以跑一串**：`run steps.txt`，每一步都过同样的检查和拦截。
+- **默认 `safe`**：手越灵活越需要刹车。
+- **行动表**：每一步先说要做什么，出问题知道卡在哪；`--dry-run` 只看不做。
 
 ## 安装
 
 ```bash
 pip install pyautogui pillow
-# 可选：列出窗口
-pip install pygetwindow
-# 可选：虚拟桌面
-pip install pyvda
+pip install pygetwindow   # 可选：列窗口
+pip install pyvda         # 可选：虚拟桌面
 ```
 
-Windows / macOS / Linux（X11）都可运行，Windows 上中文输入已处理好（走剪贴板）。
+Windows / macOS / Linux（X11）都能跑，Windows 上中文输入走剪贴板。
 
 ## 用法
 
 ```bash
 python pc.py size                        # 屏幕分辨率
-python pc.py shot screen.png             # 截屏到文件
+python pc.py shot screen.png             # 截屏
 python pc.py click 960 540               # 左键单击
 python pc.py dclick 960 540              # 双击
 python pc.py rclick 960 540              # 右键
-python pc.py move 100 200                # 移动鼠标（不点）
+python pc.py move 100 200                # 只移动
 python pc.py type "hello world"          # 输入英文
 python pc.py type "你好呀"               # 输入中文（剪贴板）
 python pc.py key enter                   # 按一个键
 python pc.py hotkey ctrl s               # 组合键
 python pc.py scroll -3                   # 向下滚 3 格
-python pc.py find button.png 0.9         # 在屏幕上找图，返回坐标
-python pc.py windows                     # 列出窗口及位置（需 pygetwindow）
-python pc.py screens                     # 每块虚拟桌面上开着什么、谁在前台（文字）
-python pc.py watch 2                     # 实时：现在前台是什么、在干什么（Ctrl+C 退出）
-python pc.py desks                       # 列出虚拟桌面（* 是当前）
-python pc.py desk new                    # 新建虚拟桌面
-python pc.py desk switch 2               # 切到第 2 个桌面
-python pc.py desk close                  # 关闭当前虚拟桌面
-python pc.py click 960 540 --delay 2     # 动作前先等 2 秒
-python pc.py run steps.txt               # 一次跑一串动作（每行一条）
-python pc.py run steps.txt --parallel    # 并行执行打开/查看类步骤
+python pc.py find button.png 0.9         # 找图，返回坐标
+python pc.py windows                     # 窗口和位置
+python pc.py screens                     # 每块桌面开着什么、谁在前台
+python pc.py watch 2                     # 实时：现在在干什么（Ctrl+C 退出）
+python pc.py desks                       # 虚拟桌面列表
+python pc.py desk new                    # 新建桌面
+python pc.py desk switch 2               # 切桌面
+python pc.py desk close                  # 关闭当前桌面
+python pc.py click 960 540 --delay 2     # 动作前等 2 秒
+python pc.py run steps.txt               # 跑一串
+python pc.py run steps.txt --parallel    # 并行跑打开/查看类步骤
 python pc.py run -                       # 从标准输入读
 ```
 
-`steps.txt` 示例（支持引号、`#` 注释）：
+`steps.txt` 每行一条，支持引号与 `#` 注释：
 
 ```
 launch notepad
@@ -84,82 +78,67 @@ hotkey ctrl s
 
 ## 权限等级
 
-三档，用 `--level`（或环境变量 `PC_LEVEL`）选，默认 `safe`：
+用 `--level`（或环境变量 `PC_LEVEL`）选，默认 `safe`：
 
 | 等级 | 允许 |
 | --- | --- |
-| `browse` 末级 | 查看与打开：size / shot / windows / find / launch / move |
-| `safe` 次级 | 再加 click / dclick / rclick / scroll / type / key / hotkey；**但命中「付款、注册注销、删改东西」时拒绝** |
-| `full` 最高级 | 允许一切 |
+| `browse` | 查看与打开：size / shot / windows / find / launch / move |
+| `safe` | 再加点击、滚动、打字、按键；命中「付款、注册注销、删改东西」这类词时拒绝 |
+| `full` | 全部 |
 
 ```bash
-python pc.py launch https://bilibili.com --level browse   # 只打开网页
-python pc.py launch notepad --level browse                # 只打开程序
-python pc.py click 960 540 --level safe                   # 普通点击可以
-python pc.py type "确认付款" --level safe                 # 被拦截
-python pc.py type "确认付款" --level full                 # 放行
+python pc.py launch https://bilibili.com --level browse
+python pc.py click 960 540 --level safe
+python pc.py type "确认付款" --level safe   # 被拦截
+python pc.py type "确认付款" --level full   # 放行
 ```
 
-`safe` 级的拦截是按**命令 + 文字关键词**判断的「尽力而为」：能拦下一些明显的付款、注销、删除、发送、格式化，但不认识所有变体与流程（比如点进三步之后的确认页）。真正重要的账号操作，请人来做。
+`safe` 的拦截是按命令和文字关键词判断的，只能拦下一部分。有些变体、伪装写法、点到几步之后的确认页、业务页面里才看得出的危险操作，都可能拦不住。重要的账号操作，请人来做。
 
 ## 行动表
 
-每次执行前会先打印一行「计划：…」，说明这一步接下来要做什么，例如：
+执行前先打印一行「计划：…」，说明这一步要做什么：
 
 ```
 计划：在 (960, 540) 单击鼠标左键
 ```
 
-- `--no-plan`：关掉行动表（你信任它时）
-- `--dry-run`：只打印行动表，不执行（预览模式）
+- `--no-plan`：关掉
+- `--dry-run`：只看计划不执行
 
 ## 本地看板（可选）
-
-命令行够 agent 用；想看「它现在在干什么、卡在哪一步」，起一个只监听本机的网页：
 
 ```bash
 python serve.py            # http://127.0.0.1:8000
 python serve.py 8765       # 换端口
+python serve.py --host 0.0.0.0   # 让局域网能访问（自行评估风险）
 ```
 
-页面上有：每块虚拟桌面上开着什么 + 前台窗口、鼠标位置、空闲秒数；一个动作输入框（和命令行同一套语法与权限）；权限切换（browse / safe / full，切 full 需确认）；以及**急停**按钮——点下去之后所有动作都被拒绝，直到再点一次「解除急停」。手机连同一个局域网地址也能看（默认只监听 127.0.0.1，要手机访问就 `--host 0.0.0.0` 自行决定风险）。
+页面上能看到每块桌面的窗口、前台窗口、鼠标位置、空闲秒数；有一个动作输入框（和命令行同一套语法与权限）；可以切权限；有一个**急停**按钮，点下去后所有动作都被拒绝，再点一次解除。默认只监听本机。
 
 ## 和视觉模型一起用
 
-典型循环（任何 chat 模型都能做，不绑定厂商）：
-
-1. `python pc.py shot screen.png`，把 `screen.png` 发给模型；
-2. 模型说出「点哪里 / 输入什么」；
+1. `python pc.py shot screen.png`，把图发给模型；
+2. 模型说点哪里、输入什么；
 3. `python pc.py click X Y` 或 `python pc.py type "..."`；
 4. 重复。
 
-坐标换算：截图是物理像素，`pyautogui.size()` 返回的也是物理像素（Windows 缩放 150% 时两者一致），所以截图上的坐标可以直接用。
-
-## 安全
-
-- **急停**：同时按住鼠标左键和右键，脚本会立刻中止、不执行任何动作（动作前都会检查一次）。
-- 每个动作之间默认 0.3s 间隔，避免连点失控。
-- 工具本身不联网、不上传、暂时不常驻（看板是手动起的，关掉就不在）。不过如果命令是云端模型（API）给的，那一环仍然要联网；想整条链路都在本机，就得换本地视觉模型（比如 UI-TARS + Ollama 之类），代价是更吃硬件、更慢。
-- 建议只在你自己的机器上、清醒地看着它跑。
+截图是物理像素，`pyautogui.size()` 也是物理像素（Windows 缩放 150% 时一致），坐标可以直接用。
 
 ## 风险与责任
 
-这是一个会真的动鼠标和键盘的工具，用错会出事（点到不该点的、删了不该删的）。
+这是个会真的动鼠标键盘的工具，用错会出事。
 
-- 用法由你决定，后果也由你承担；作者只提供代码，不提供担保（见 LICENSE 里的 MIT 免责条款）。
-- 权限分级、危险词拦截、急停，作用是「把常见的误操作挡一下」，不是「保证安全」——它们只能拦下一部分；有些变体、伪装过的写法、点到三步之后的确认页、以及业务页面里才看得出的危险操作，都可能拦不住，需要人自己判断。
-- 建议只在你自己有权限的机器上、看得见屏幕的时候运行；支付、账号、删除这类操作，请人工来做。
+- 怎么用由你决定，后果也由你承担。作者只提供代码，不提供担保（见 LICENSE 的 MIT 条款）。
+- 权限分级、危险词拦截、急停，作用是把常见的误操作挡一下，不是保证安全。它们只能拦下一部分，有些危险操作拦不住。
+- 建议只在自己有权限的机器上、看得见屏幕时运行。支付、账号、删除这类操作，请人工来做。
 
 ## 关于维护
 
-我还是个高一学生，课业紧的时候可能没法频繁更新，这点先跟你说声抱歉。
+我还是个高一学生，课业紧的时候可能没法频繁更新，先跟你说声抱歉。
 
-遇到 bug、想加功能、或者觉得哪里写得不清楚，欢迎开 issue 告诉我，我有空就会看；也欢迎直接提 PR。用得顺手的话，点个 star 就当鼓励我了。
+有 bug、想加功能、或者哪里写得不清楚，欢迎开 issue，我有空就看；也欢迎直接提 PR。
 
 ## License
 
 MIT
-
-
-
-
