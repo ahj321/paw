@@ -11,6 +11,7 @@ ai-pc-control —— 用命令行控制鼠标和键盘，配合视觉模型做 W
     python pc.py shot screen.png            # 截屏
     python pc.py launch https://bilibili.com  # 打开网页
     python pc.py launch notepad               # 打开程序
+    python pc.py focus "Edge"               # 把标题含 Edge 的窗口切到前台
     python pc.py click 960 540              # 左键单击
     python pc.py type "hello"               # 输入文字
     python pc.py click 960 540 --dry-run    # 只打印行动表，不执行
@@ -48,6 +49,16 @@ import threading
 import time
 import webbrowser
 
+# 4K + 缩放时，不声明 DPI 感知的话 pyautogui 拿到的坐标会和物理像素差一截，
+# 点击就会偏。先声明，再导入 pyautogui。
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PER_MONITOR_AWARE_V2
+except Exception:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
 import pyautogui
 
 try:
@@ -67,6 +78,7 @@ CMD_LEVEL = {
     "size": "browse", "shot": "browse", "windows": "browse", "find": "browse",
     "launch": "browse", "move": "browse",
     "desks": "browse", "desk": "browse", "screens": "browse", "watch": "browse",
+    "focus": "browse",
     "click": "safe", "dclick": "safe", "rclick": "safe", "scroll": "safe",
     "type": "safe", "key": "safe", "hotkey": "safe",
 }
@@ -123,6 +135,8 @@ def _plan_text(cmd: str, args: list) -> str:
         return f"在屏幕上查找图片 {args[0] if args else '?'}，返回坐标（不点击）"
     if cmd == "launch":
         return f"打开：{args[0] if args else '?'}"
+    if cmd == "focus":
+        return f"把标题含「{args[0] if args else '?'}」的窗口切到前台（不点击）"
     if cmd == "move":
         return f"把鼠标移动到 ({args[0]}, {args[1]})，不点击"
     if cmd == "click":
@@ -174,6 +188,37 @@ def _list_windows() -> None:
         title = (w.title or "").strip()
         if title:
             print(f"{w.left:>6} {w.top:>6} {w.width:>6} {w.height:>6}  {title}")
+
+
+def _focus_cmd(args: list) -> int:
+    """按标题关键词把窗口切到前台。点击之前先 focus，第一下才不会只落在「激活」上。"""
+    try:
+        import pygetwindow as gw
+    except ImportError:
+        print("需要 pygetwindow：pip install pygetwindow", file=sys.stderr)
+        return 1
+
+    if not args:
+        print("用法：pc.py focus <标题关键词>", file=sys.stderr)
+        return 2
+
+    key = " ".join(args).lower()
+    hits = [w for w in gw.getAllWindows() if key in (w.title or "").lower() and (w.title or "").strip()]
+    if not hits:
+        print(f"没找到标题含「{key}」的窗口", file=sys.stderr)
+        return 1
+
+    w = hits[0]
+    try:
+        if w.isMinimized:
+            w.restore()
+        w.activate()
+        time.sleep(0.4)
+        print("focused:", w.title)
+        return 0
+    except Exception as e:
+        print(f"激活失败：{e}", file=sys.stderr)
+        return 1
 
 
 def _idle_seconds() -> float:
@@ -380,6 +425,9 @@ def run_one(cmd: str, args: list, level: str, show_plan: bool, dry_run: bool) ->
         elif cmd == "launch":
             _do_launch(args[0])
             print("launched", args[0])
+
+        elif cmd == "focus":
+            return _focus_cmd(args)
 
         elif cmd == "click":
             pyautogui.click(int(args[0]), int(args[1]))
