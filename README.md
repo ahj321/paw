@@ -4,13 +4,15 @@
 
 > 本项目由 deepseek-V4.1-Flash-1017 生成。
 
-暂时没有后台常驻服务，也没有截图上传。主体就是一个 `pc.py`，跑一条命令做一件事；想看它干活时，再手动起一个本地看板（`serve.py`，可选）。
+暂时没有后台常驻服务，也没有截图上传。主体就是一个 `pc.py`，一条命令做一件事。想看它干活时，可以手动起本地看板 `serve.py`。
 
 ## 为什么
 
-同类工具大多比较麻烦。我（一个高一学生）只想要一双能听命令的手，就自己写了这个：用 DSH（DeepSeek Harness）配合 DeepSeek V4.1 完成，代码不大，看得懂也改得动。
+同类工具大多比较麻烦。用 agent 去外面做事，要一个个装插件、一个个给权限，也挺折腾。
 
-工具本身可以离线跑；用云端模型（DeepSeek API 这类）来下命令时，那一环需要联网。想整条链路都在本机，就得换本地视觉模型，代价是更吃硬件、更慢。
+我（一个高一学生）只想要一双能听命令的手，就自己写了这个：用 DSH（DeepSeek Harness）配合 DeepSeek V4.1，代码不大，看得懂也改得动。
+
+工具本身能离线跑；用云端模型下命令时，那一环要联网。想整条链路都在本机，就得换本地视觉模型，更吃硬件、更慢。
 
 ## 项目结构
 
@@ -24,10 +26,10 @@ LICENSE
 
 ## 设计取舍
 
-- **目前只有命令行**：给 agent 用不需要界面。要盯着看时，起 `serve.py`，它和命令行共用同一套动作与权限。常驻、托盘这类形态以后可能加。
-- **一次可以跑一串**：`run steps.txt`，每一步都过同样的检查和拦截。
+- **目前只有命令行**：给 agent 用不需要界面。要盯着看时起 `serve.py`，它和命令行共用同一套动作与权限。常驻、托盘这类形态以后可能加。
+- **一次可以跑一串**：`run steps.txt`，每一步都过同样的检查。
 - **默认 `safe`**：手越灵活越需要刹车。
-- **行动表**：每一步先说要做什么，出问题知道卡在哪；`--dry-run` 只看不做。
+- **行动表**：每一步先说要做什么，出问题知道卡在哪。
 
 ## 安装
 
@@ -49,14 +51,14 @@ python pc.py dclick 960 540              # 双击
 python pc.py rclick 960 540              # 右键
 python pc.py move 100 200                # 只移动
 python pc.py type "hello world"          # 输入英文
-python pc.py type "你好呀"               # 输入中文（剪贴板）
+python pc.py type "你好呀"               # 输入中文
 python pc.py key enter                   # 按一个键
 python pc.py hotkey ctrl s               # 组合键
 python pc.py scroll -3                   # 向下滚 3 格
 python pc.py find button.png 0.9         # 找图，返回坐标
 python pc.py windows                     # 窗口和位置
 python pc.py screens                     # 每块桌面开着什么、谁在前台
-python pc.py watch 2                     # 实时：现在在干什么（Ctrl+C 退出）
+python pc.py watch 2                     # 实时：现在在干什么
 python pc.py desks                       # 虚拟桌面列表
 python pc.py desk new                    # 新建桌面
 python pc.py desk switch 2               # 切桌面
@@ -88,33 +90,31 @@ hotkey ctrl s
 
 ```bash
 python pc.py launch https://bilibili.com --level browse
-python pc.py click 960 540 --level safe
 python pc.py type "确认付款" --level safe   # 被拦截
 python pc.py type "确认付款" --level full   # 放行
 ```
 
-`safe` 的拦截是按命令和文字关键词判断的，只能拦下一部分。有些变体、伪装写法、点到几步之后的确认页、业务页面里才看得出的危险操作，都可能拦不住。重要的账号操作，请人来做。
+`safe` 的拦截按命令和文字关键词判断，只能拦下一部分。有些变体、伪装写法、点到几步之后的确认页、业务页面里才看得出的危险操作，都可能拦不住。
 
 ## 行动表
 
-执行前先打印一行「计划：…」，说明这一步要做什么：
+执行前先打印一行「计划：…」：
 
 ```
 计划：在 (960, 540) 单击鼠标左键
 ```
 
-- `--no-plan`：关掉
-- `--dry-run`：只看计划不执行
+`--no-plan` 关掉，`--dry-run` 只看计划不执行。
 
 ## 本地看板（可选）
 
 ```bash
 python serve.py            # http://127.0.0.1:8000
 python serve.py 8765       # 换端口
-python serve.py --host 0.0.0.0   # 让局域网能访问（自行评估风险）
+python serve.py --host 0.0.0.0   # 让局域网能访问
 ```
 
-页面上能看到每块桌面的窗口、前台窗口、鼠标位置、空闲秒数；有一个动作输入框（和命令行同一套语法与权限）；可以切权限；有一个**急停**按钮，点下去后所有动作都被拒绝，再点一次解除。默认只监听本机。
+页面上有每块桌面的窗口、前台窗口、鼠标位置、空闲秒数；一个动作输入框（和命令行同一套语法与权限）；权限切换；还有一个**急停**按钮，点下去后所有动作都被拒绝，再点一次解除。
 
 ## 和视觉模型一起用
 
@@ -123,7 +123,7 @@ python serve.py --host 0.0.0.0   # 让局域网能访问（自行评估风险）
 3. `python pc.py click X Y` 或 `python pc.py type "..."`；
 4. 重复。
 
-截图是物理像素，`pyautogui.size()` 也是物理像素（Windows 缩放 150% 时一致），坐标可以直接用。
+截图和 `pyautogui.size()` 都是物理像素，坐标可以直接用。
 
 ## 风险与责任
 
