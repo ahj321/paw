@@ -10,9 +10,9 @@
 
 ## Why
 
-Most computer-control stacks make you install a framework and grant a pile of permissions before anything moves. paw does one thing: it splits "look at the screen" and "act on the screen" into two commands and lets the model chain them itself.
+Agents can already read code and write docs, but the last mile — actually clicking that button for you — usually costs a framework, an environment setup and an API key. paw compresses it into one command: **no extra key, no framework**, just `pip install pyautogui pillow` and it moves.
 
-It works offline. With a cloud model, only the model call needs the network — running everything locally means swapping in a local vision model, which needs more hardware and is slower.
+It does one thing: it splits "look at the screen" and "act on the screen" into two commands and lets the model chain them itself. It works offline; with a cloud model, only the model call needs the network.
 
 ## Quick start
 

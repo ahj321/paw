@@ -1,5 +1,14 @@
 # 更新记录
 
+## v1.2
+
+**接进 agent 只要粘一段配置。**
+
+- 新增 `paw_mcp.py`：MCP server，把命令包成 14 个工具（`screenshot` / `click` / `type_text` / `focus_window`…）。Claude Desktop、Cursor、Cline、Continue、Windsurf 直接可用，不用改 paw 的代码。
+- 新增 `SKILL.md`：给 agent 读的说明书——什么时候该用它、三条起手命令、命令表、安全边界。
+- README 增「在 agent 里用（MCP）」一节，附各家客户端的配置片段。
+- 修 MCP 子进程继承 stdin 导致卡死 120 秒的问题（`stdin=DEVNULL`）；强制 UTF-8 输出，中文不再乱码。
+
 ## v1.1
 
 **更快，而且行动表能说清「点的是谁」。**
