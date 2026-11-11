@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""paw 的 MCP server：把 pc.py 的命令包成 MCP tools，任何支持 MCP 的客户端都能用。
+"""paw 的 MCP server：把 paw.py 的命令包成 MCP tools，任何支持 MCP 的客户端都能用。
 
 用法（stdio）：
     python paw_mcp.py
@@ -25,12 +25,12 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-PC = Path(__file__).with_name("pc.py")
+PC = Path(__file__).with_name("paw.py")
 mcp = FastMCP("paw")
 
 
 def _run(*args: str, timeout: int = 120) -> str:
-    """调用 pc.py，返回它的标准输出（失败时返回错误信息）。"""
+    """调用 paw.py，返回它的标准输出（失败时返回错误信息）。"""
     cmd = [sys.executable, str(PC), *args, "--no-plan"]
     env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
     try:

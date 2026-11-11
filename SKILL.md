@@ -5,7 +5,7 @@ description: Control this computer's mouse and keyboard from the command line �
 
 # paw
 
-`pc.py` 是这台机器上的电脑控制工具：一条命令做一件事，输出可直接读。
+`paw.py` 是这台机器上的电脑控制工具：一条命令做一件事，输出可直接读。
 
 ## 什么时候该用它
 
@@ -17,35 +17,35 @@ description: Control this computer's mouse and keyboard from the command line �
 
 ## 先做这三件事
 
-1. `python pc.py size` —— 屏幕物理像素，例如 `(3840, 2160)`；
-2. `python pc.py scale` —— 显示缩放，例如 `1.50x（150%）`。**截图坐标是物理像素**；按缩略图/预览图估的坐标要先乘这个比例；
-3. `python pc.py shot s.png` —— 截一张图，看着图决定下一步。
+1. `python paw.py size` —— 屏幕物理像素，例如 `(3840, 2160)`；
+2. `python paw.py scale` —— 显示缩放，例如 `1.50x（150%）`。**截图坐标是物理像素**；按缩略图/预览图估的坐标要先乘这个比例；
+3. `python paw.py shot s.png` —— 截一张图，看着图决定下一步。
 
 ## 常用命令
 
 ```bash
-python pc.py shot s.png                 # 截屏
-python pc.py shot s.png --crop 0,0,800,600 --jpg
-python pc.py click 960 540              # 左键
-python pc.py dclick 960 540             # 双击
-python pc.py rclick 960 540             # 右键
-python pc.py move 960 540               # 只移动
-python pc.py drag 100 100 900 700       # 拖拽
-python pc.py type "hello"               # 输入（中文走剪贴板）
-python pc.py key enter                  # 单键
-python pc.py hotkey ctrl s              # 组合键
-python pc.py scroll -3                  # 滚轮，负数是向下
-python pc.py focus "记事本"              # 按标题把窗口切前台（点击前先做）
-python pc.py windows                    # 列窗口
-python pc.py launch "steam://open/main" # 打开程序/文件/网址/协议
-python pc.py wait 1.5                   # 等待
+python paw.py shot s.png                 # 截屏
+python paw.py shot s.png --crop 0,0,800,600 --jpg
+python paw.py click 960 540              # 左键
+python paw.py dclick 960 540             # 双击
+python paw.py rclick 960 540             # 右键
+python paw.py move 960 540               # 只移动
+python paw.py drag 100 100 900 700       # 拖拽
+python paw.py type "hello"               # 输入（中文走剪贴板）
+python paw.py key enter                  # 单键
+python paw.py hotkey ctrl s              # 组合键
+python paw.py scroll -3                  # 滚轮，负数是向下
+python paw.py focus "记事本"              # 按标题把窗口切前台（点击前先做）
+python paw.py windows                    # 列窗口
+python paw.py launch "steam://open/main" # 打开程序/文件/网址/协议
+python paw.py wait 1.5                   # 等待
 ```
 
 批量动作写进 `steps.txt`（一行一条，`#` 后是备注），然后：
 
 ```bash
-python pc.py run steps.txt              # 串行
-python pc.py run steps.txt --parallel   # 打开/查看类并行，鼠标键盘仍串行
+python paw.py run steps.txt              # 串行
+python paw.py run steps.txt --parallel   # 打开/查看类并行，鼠标键盘仍串行
 ```
 
 ## 行动与安全

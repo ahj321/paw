@@ -6,7 +6,7 @@
 
 ![paw 演示](assets/demo.gif)
 
-`pc.py` 是这套工具的唯一入口。模型看截图决定下一步，paw 负责真的把鼠标挪过去、把字打出来。
+`paw.py` 是这套工具的唯一入口。模型看截图决定下一步，paw 负责真的把鼠标挪过去、把字打出来。
 
 > 本项目由 deepseek-V4.1-Flash-1017 生成。
 
@@ -20,8 +20,8 @@ agent 已经会读代码、写文档，却还差最后三公里：真的替你�
 
 ```bash
 pip install pyautogui pillow
-python pc.py size          # 打印屏幕分辨率，能看到数字就说明装好了
-python pc.py shot s.png    # 截一张屏
+python paw.py size          # 打印屏幕分辨率，能看到数字就说明装好了
+python paw.py shot s.png    # 截一张屏
 ```
 
 ## 安装
@@ -37,30 +37,30 @@ Windows / macOS / Linux（X11）可用。Windows 上输入中文走剪贴板。
 ## 用法
 
 ```bash
-python pc.py size                        # 屏幕分辨率
-python pc.py scale                       # 显示缩放比例（物理 / 逻辑像素换算）
-python pc.py shot screen.png             # 截屏
-python pc.py click 960 540               # 左键单击
-python pc.py dclick 960 540              # 双击
-python pc.py rclick 960 540              # 右键
-python pc.py move 100 200                # 只移动
-python pc.py type "hello world"          # 输入英文
-python pc.py type "你好呀"               # 输入中文
-python pc.py key enter                   # 按一个键
-python pc.py hotkey ctrl s               # 组合键
-python pc.py scroll -3                   # 向下滚 3 格
-python pc.py find button.png 0.9         # 找图，返回坐标
-python pc.py windows                     # 窗口和位置
-python pc.py screens                     # 每块桌面开着什么、谁在前台
-python pc.py watch 2                     # 实时：现在在干什么
-python pc.py desks                       # 虚拟桌面列表
-python pc.py desk new                    # 新建桌面
-python pc.py desk switch 2               # 切桌面
-python pc.py desk close                  # 关闭当前桌面
-python pc.py click 960 540 --delay 2     # 动作前等 2 秒
-python pc.py run steps.txt               # 跑一串
-python pc.py run steps.txt --parallel    # 并行跑打开/查看类步骤
-python pc.py run -                       # 从标准输入读
+python paw.py size                        # 屏幕分辨率
+python paw.py scale                       # 显示缩放比例（物理 / 逻辑像素换算）
+python paw.py shot screen.png             # 截屏
+python paw.py click 960 540               # 左键单击
+python paw.py dclick 960 540              # 双击
+python paw.py rclick 960 540              # 右键
+python paw.py move 100 200                # 只移动
+python paw.py type "hello world"          # 输入英文
+python paw.py type "你好呀"               # 输入中文
+python paw.py key enter                   # 按一个键
+python paw.py hotkey ctrl s               # 组合键
+python paw.py scroll -3                   # 向下滚 3 格
+python paw.py find button.png 0.9         # 找图，返回坐标
+python paw.py windows                     # 窗口和位置
+python paw.py screens                     # 每块桌面开着什么、谁在前台
+python paw.py watch 2                     # 实时：现在在干什么
+python paw.py desks                       # 虚拟桌面列表
+python paw.py desk new                    # 新建桌面
+python paw.py desk switch 2               # 切桌面
+python paw.py desk close                  # 关闭当前桌面
+python paw.py click 960 540 --delay 2     # 动作前等 2 秒
+python paw.py run steps.txt               # 跑一串
+python paw.py run steps.txt --parallel    # 并行跑打开/查看类步骤
+python paw.py run -                       # 从标准输入读
 ```
 
 ## steps 文件
@@ -85,9 +85,9 @@ hotkey ctrl s      # 保存
 | `full` | 全部 |
 
 ```bash
-python pc.py launch https://bilibili.com --level browse
-python pc.py type "确认付款" --level safe   # 被拦截
-python pc.py type "确认付款" --level full   # 放行
+python paw.py launch https://bilibili.com --level browse
+python paw.py type "确认付款" --level safe   # 被拦截
+python paw.py type "确认付款" --level full   # 放行
 ```
 
 `safe` 按命令和文字关键词判断，只能挡住一部分常见误操作。变体写法、点到几步之后才出现的确认页、业务页面里才看得出的危险操作，都可能拦不住。
@@ -112,7 +112,7 @@ python pc.py type "确认付款" --level full   # 放行
 连续动作写成 steps 文件一次跑完，可以省掉每步的启动开销：
 
 ```bash
-python pc.py run steps.txt --pause 0.05
+python paw.py run steps.txt --pause 0.05
 ```
 
 `--pause` 控制动作之间的间隔，默认 0.15 秒。
@@ -177,12 +177,12 @@ pip install "mcp[cli]"
 
 建议接一个**带视觉能力的模型 API 的 agent**：把截图交给它，让它自己决定下一步调用哪条命令，你不必手动算坐标。
 
-1. `python pc.py shot screen.png`，把图发给模型；
+1. `python paw.py shot screen.png`，把图发给模型；
 2. 模型告诉你点哪里、输入什么（坐标用截图的像素坐标）；
-3. `python pc.py click X Y` 或 `python pc.py type "..."`；
+3. `python paw.py click X Y` 或 `python paw.py type "..."`；
 4. 重复。
 
-`shot` 和 `click` 都用物理像素，截图坐标可以直接用。要注意的是**按缩略图、聊天里预览图估出来的坐标不能直接用**——`python pc.py scale` 会打印当前缩放比（例如 150% 时，预览图上的坐标要乘 1.5 才是截图坐标）。
+`shot` 和 `click` 都用物理像素，截图坐标可以直接用。要注意的是**按缩略图、聊天里预览图估出来的坐标不能直接用**——`python paw.py scale` 会打印当前缩放比（例如 150% 时，预览图上的坐标要乘 1.5 才是截图坐标）。
 
 ## 风险
 
@@ -199,4 +199,4 @@ MIT
 
 ---
 
-版本 **v1.2**，更新记录见 [CHANGELOG.md](CHANGELOG.md)。
+版本 **v1.3**，更新记录见 [CHANGELOG.md](CHANGELOG.md)。

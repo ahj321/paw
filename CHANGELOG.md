@@ -1,5 +1,13 @@
 # 更新记录
 
+## v1.3
+
+**入口改回本名。**
+
+- 主程序 `pc.py` → `paw.py`，命令统一成 `python paw.py ...`；
+- 旧的 `pc.py` 保留为兼容转发（`import paw`），已经在用的脚本一行都不用改；
+- 文档、示例、`steps.txt.example`、MCP server 全部指向 `paw.py`。
+
 ## v1.2
 
 **接进 agent 只要粘一段配置。**
