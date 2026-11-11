@@ -283,6 +283,11 @@ def main() -> int:
     )
     ap.add_argument("--no-plan", action="store_true", help="不打印行动表")
     ap.add_argument("--dry-run", action="store_true", help="只打印行动表，不执行")
+    ap.add_argument(
+        "--parallel",
+        action="store_true",
+        help="run 时并行执行「打开/查看」类步骤（鼠标键盘动作仍串行，否则会打架）",
+    )
     a = ap.parse_args()
 
     if a.delay:
@@ -297,6 +302,35 @@ def main() -> int:
             if not steps:
                 print("没有可执行的步骤", file=sys.stderr)
                 return 2
+
+            if a.parallel:
+                mouse_cmds = {"click", "dclick", "rclick", "scroll", "type", "key", "hotkey", "move"}
+                bad = [s for s in steps if shlex.split(s)[0] in mouse_cmds]
+                if bad:
+                    print(
+                        "并行模式只并行「打开 / 查看」类步骤；鼠标键盘动作必须串行"
+                        f"（这些会打架：{', '.join(bad[:3])}）",
+                        file=sys.stderr,
+                    )
+                    return 2
+
+                from concurrent.futures import ThreadPoolExecutor
+
+                def _one(item):
+                    idx, line = item
+                    parts = shlex.split(line)
+                    print(f"[{idx}/{len(steps)}] {line}", file=sys.stderr)
+                    return run_one(parts[0], parts[1:], a.level, not a.no_plan, a.dry_run)
+
+                with ThreadPoolExecutor(max_workers=min(8, len(steps))) as ex:
+                    results = list(ex.map(_one, enumerate(steps, 1)))
+                bad_idx = next((i for i, rc in enumerate(results, 1) if rc != 0), None)
+                if bad_idx is not None:
+                    print(f"第 {bad_idx} 步失败（返回码 {results[bad_idx - 1]}）", file=sys.stderr)
+                    return results[bad_idx - 1]
+                print(f"完成，共 {len(steps)} 步（并行）", file=sys.stderr)
+                return 0
+
             for idx, line in enumerate(steps, 1):
                 parts = shlex.split(line)
                 cmd, rest = parts[0], parts[1:]

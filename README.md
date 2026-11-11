@@ -51,6 +51,7 @@ python pc.py find button.png 0.9         # 在屏幕上找图，返回坐标
 python pc.py windows                     # 列出窗口及位置（需 pygetwindow）
 python pc.py click 960 540 --delay 2     # 动作前先等 2 秒
 python pc.py run steps.txt               # 一次跑一串动作（每行一条）
+python pc.py run steps.txt --parallel    # 并行执行打开/查看类步骤
 python pc.py run -                       # 从标准输入读
 ```
 
