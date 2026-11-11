@@ -64,16 +64,59 @@ except Exception:
     except Exception:
         pass
 
-import pyautogui
-
 try:
     sys.stdout.reconfigure(errors='replace')
     sys.stderr.reconfigure(errors='replace')
 except Exception:
     pass
 
-pyautogui.FAILSAFE = False
-pyautogui.PAUSE = 0.15
+# pyautogui 的导入很贵（约 0.4 秒）。size / shot / windows 这些不需要它的命令
+# 就靠下面的懒加载跳过导入，只付解释器启动的钱。
+_PG_CONF = {"pause": 0.15}
+
+
+def _import_pyautogui():
+    import pyautogui as pg
+
+    pg.FAILSAFE = False
+    pg.PAUSE = _PG_CONF["pause"]
+    return pg
+
+
+class _LazyPyAutoGUI:
+    """第一次访问属性时才真正导入 pyautogui；PAUSE 赋值只记下来，等导入时生效。"""
+
+    _module = None
+
+    def _load(self):
+        if _LazyPyAutoGUI._module is None:
+            _LazyPyAutoGUI._module = _import_pyautogui()
+        return _LazyPyAutoGUI._module
+
+    def __getattr__(self, name):
+        return getattr(self._load(), name)
+
+    def __setattr__(self, name, value):
+        if name == "PAUSE":
+            _PG_CONF["pause"] = value
+            if _LazyPyAutoGUI._module is not None:
+                setattr(_LazyPyAutoGUI._module, name, value)
+            return
+        setattr(self._load(), name, value)
+
+
+pyautogui = _LazyPyAutoGUI()
+
+
+def _screen_size():
+    """屏幕物理像素尺寸。Windows 下用系统 API，避免为了两个数字导入 pyautogui。"""
+    if sys.platform.startswith("win"):
+        try:
+            u = ctypes.windll.user32
+            return (u.GetSystemMetrics(0), u.GetSystemMetrics(1))
+        except Exception:
+            pass
+    return pyautogui.size()
 
 # 急停：命令行下靠鼠标左右键同按；Web 看板点「急停」时会置上这个标记。
 STOP_FLAG = threading.Event()
@@ -272,13 +315,61 @@ def _clipboard_set(text: str) -> None:
         pass
 
 
-def _type_text(text: str) -> None:
-    if all(ord(c) < 128 for c in text):
-        pyautogui.typewrite(text, interval=0.02)
+def _win_input() -> bool:
+    return sys.platform.startswith("win")
+
+
+def _click_at(x: int, y: int, button: str = "left", double: bool = False) -> None:
+    """点一下。Windows 下直接走系统 API，不导入 pyautogui（省 0.4 秒）。"""
+    if not _win_input():
+        if button == "right":
+            pyautogui.rightClick(x, y)
+        elif double:
+            pyautogui.doubleClick(x, y)
+        else:
+            pyautogui.click(x, y)
         return
-    # 中文走剪贴板：写进去、等一会儿、粘贴、再把原来的剪贴板还回去，
-    # 免得内容串到别的程序里（之前保存对话框文件名被搅乱就是这么来的）。
-    # 优先用 pyperclip（稳定），没装就退回 Win32 兜底。
+    u = ctypes.windll.user32
+    u.SetCursorPos(int(x), int(y))
+    time.sleep(0.02)
+    down, up = (0x0008, 0x0010) if button == "right" else (0x0002, 0x0004)
+    for i in range(2 if double else 1):
+        u.mouse_event(down, 0, 0, 0, 0)
+        u.mouse_event(up, 0, 0, 0, 0)
+        if double and i == 0:
+            time.sleep(0.05)
+
+
+def _move_to(x: int, y: int) -> None:
+    """只移动光标。Windows 下直接用 SetCursorPos。"""
+    if _win_input():
+        ctypes.windll.user32.SetCursorPos(int(x), int(y))
+    else:
+        pyautogui.moveTo(x, y, duration=0.15)
+
+
+def _scroll_at(n: int) -> None:
+    """滚轮 n 格（正数向上）。Windows 下用 mouse_event 的 WHEEL。"""
+    if not _win_input():
+        pyautogui.scroll(n)
+        return
+    ctypes.windll.user32.mouse_event(0x0800, 0, 0, int(n) * 120, 0)
+
+
+def _paste_ctrl_v() -> None:
+    """发一次 Ctrl+V。Windows 下用 keybd_event，避免导入 pyautogui。"""
+    if not _win_input():
+        pyautogui.hotkey("ctrl", "v")
+        return
+    u = ctypes.windll.user32
+    u.keybd_event(0x11, 0, 0, 0)      # Ctrl 按下
+    u.keybd_event(0x56, 0, 0, 0)      # V 按下
+    u.keybd_event(0x56, 0, 0x0002, 0)  # V 抬起
+    u.keybd_event(0x11, 0, 0x0002, 0)  # Ctrl 抬起
+
+
+def _type_text(text: str) -> None:
+    # 统一走剪贴板 + Ctrl+V：比逐字符敲快，也不用为了输入去导入 pyautogui。
     try:
         import pyperclip
     except ImportError:
@@ -294,9 +385,9 @@ def _type_text(text: str) -> None:
         old = _clipboard_get()
         _clipboard_set(text)
 
-    time.sleep(0.15)
-    pyautogui.hotkey("ctrl", "v")
-    time.sleep(0.2)
+    time.sleep(0.08)
+    _paste_ctrl_v()
+    time.sleep(0.1)
 
     try:
         if pyperclip:
@@ -565,7 +656,7 @@ def run_one(
 
     try:
         if cmd == "size":
-            print(pyautogui.size())
+            print(_screen_size())
 
         elif cmd == "shot":
             rest = args
@@ -585,7 +676,12 @@ def run_one(
                 else:
                     out = rest[i]
                     i += 1
-            img = pyautogui.screenshot()
+            try:
+                from PIL import ImageGrab
+
+                img = ImageGrab.grab()  # 比 pyautogui.screenshot() 少导入一层
+            except Exception:
+                img = pyautogui.screenshot()
             if crop:
                 img = img.crop(crop)
             if jpg:
@@ -619,19 +715,19 @@ def run_one(
             print("waited", secs, "s")
 
         elif cmd == "click":
-            pyautogui.click(int(args[0]), int(args[1]))
+            _click_at(int(args[0]), int(args[1]))
             print("clicked", args[0], args[1])
 
         elif cmd == "dclick":
-            pyautogui.doubleClick(int(args[0]), int(args[1]))
+            _click_at(int(args[0]), int(args[1]), double=True)
             print("double-clicked", args[0], args[1])
 
         elif cmd == "rclick":
-            pyautogui.rightClick(int(args[0]), int(args[1]))
+            _click_at(int(args[0]), int(args[1]), button="right")
             print("right-clicked", args[0], args[1])
 
         elif cmd == "move":
-            pyautogui.moveTo(int(args[0]), int(args[1]), duration=0.3)
+            _move_to(int(args[0]), int(args[1]))
             print("moved", args[0], args[1])
 
         elif cmd == "type":
@@ -647,7 +743,7 @@ def run_one(
             print("hotkey", " ".join(args))
 
         elif cmd == "scroll":
-            pyautogui.scroll(int(args[0]))
+            _scroll_at(int(args[0]))
             print("scrolled", args[0])
 
         elif cmd == "find":
@@ -658,12 +754,14 @@ def run_one(
         elif cmd == "windows":
             _list_windows()
 
-    except pyautogui.FailSafeException:
-        print("failsafe: 已中止", file=sys.stderr)
-        return 1
     except (IndexError, ValueError) as e:
         print(f"参数错误：{e}", file=sys.stderr)
         return 2
+    except Exception as exc:  # noqa: BLE001 - failsafe 要单独认出来
+        if type(exc).__name__ == "FailSafeException":
+            print("failsafe: 已中止", file=sys.stderr)
+            return 1
+        raise
     return 0
 
 
@@ -701,8 +799,8 @@ def main() -> int:
     ap.add_argument(
         "--pause",
         type=float,
-        default=0.3,
-        help="每个动作之间的间隔秒数（默认 0.3；想快就设 0.05，页面慢就设 1）",
+        default=0.15,
+        help="每个动作之间的间隔秒数（默认 0.15；想更快设 0.05，页面慢就设 1）",
     )
     ap.add_argument(
         "--level",

@@ -98,6 +98,18 @@ python pc.py type "确认付款" --level full   # 放行
 
 `--no-plan` 关闭行动表，`--dry-run` 只打印计划、不执行动作。
 
+## 速度
+
+单次调用约 0.2 秒，大头是解释器启动。`click` / `dclick` / `rclick` / `move` / `scroll` / `type` 走系统 API，不再加载 pyautogui；只有 `find`、`watch` 这类确实需要它的命令，才付约 0.4 秒的导入成本。
+
+连续动作写成 steps 文件一次跑完，可以省掉每步的启动开销：
+
+```bash
+python pc.py run steps.txt --pause 0.05
+```
+
+`--pause` 控制动作之间的间隔，默认 0.15 秒。
+
 ## 本地看板（可选）
 
 ```bash
@@ -127,7 +139,7 @@ python serve.py --host 0.0.0.0   # 让局域网能访问
 
 ## 维护
 
-个人项目，作者是高一学生，课业紧的时候会停更一段时间，请按「不定期更新」来预期。发现 bug、想加功能，或文档哪里不清楚，欢迎开 issue 或提 PR。
+我是高一学生，课业紧的时候会停更一段时间，请按「不定期更新」来预期。发现 bug、想加功能，或文档哪里不清楚，欢迎开 issue 或提 PR。
 
 ## License
 
