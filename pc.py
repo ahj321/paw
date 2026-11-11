@@ -44,6 +44,7 @@ import os
 import shlex
 import subprocess
 import sys
+import threading
 import time
 import webbrowser
 
@@ -57,6 +58,9 @@ except Exception:
 
 pyautogui.FAILSAFE = False
 pyautogui.PAUSE = 0.3
+
+# 急停：命令行下靠鼠标左右键同按；Web 看板点「急停」时会置上这个标记。
+STOP_FLAG = threading.Event()
 
 LEVEL_ORDER = {"browse": 0, "safe": 1, "full": 2}
 CMD_LEVEL = {
@@ -82,7 +86,9 @@ DANGER_WORDS = [
 
 
 def _emergency_pressed() -> bool:
-    """左右键同时按住 = 急停。"""
+    """左右键同时按住 = 急停；Web 看板触发过急停也算。"""
+    if STOP_FLAG.is_set():
+        return True
     try:
         user32 = ctypes.windll.user32
         left = user32.GetAsyncKeyState(0x01) & 0x8000
@@ -318,6 +324,10 @@ def _desk_cmd(args: list) -> int:
 
 def run_one(cmd: str, args: list, level: str, show_plan: bool, dry_run: bool) -> int:
     """执行一条动作。返回 0 成功；非 0 表示失败/被拦截。"""
+    if STOP_FLAG.is_set():
+        print("急停中：拒绝执行（在 Web 看板点「解除急停」或重启进程）", file=sys.stderr)
+        return 5
+
     if cmd not in CMD_LEVEL:
         print(f"未知动作：{cmd}", file=sys.stderr)
         return 2
