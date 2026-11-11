@@ -836,6 +836,7 @@ def main() -> int:
         help="权限等级：browse / safe / full（默认 safe，可用 PC_LEVEL 环境变量）",
     )
     ap.add_argument("--no-plan", action="store_true", help="不打印行动表")
+    ap.add_argument("--json", action="store_true", help="以 JSON 输出结果（方便 agent 解析）")
     ap.add_argument("--dry-run", action="store_true", help="只打印行动表，不执行")
     ap.add_argument(
         "--parallel",
@@ -895,6 +896,35 @@ def main() -> int:
                     return rc
             print(f"完成，共 {len(steps)} 步", file=sys.stderr)
             return 0
+
+        if a.json:
+            import contextlib
+            import io
+            import json as _json
+
+            try:
+                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = run_one(a.cmd, a.args, a.level, not a.no_plan, a.dry_run)
+            rec = {
+                "ok": rc == 0,
+                "code": rc,
+                "cmd": a.cmd,
+                "args": a.args,
+                "stdout": out.getvalue().strip(),
+                "stderr": err.getvalue().strip(),
+            }
+            if a.cmd in ("click", "dclick", "rclick", "move") and len(a.args) >= 2:
+                try:
+                    rec["x"], rec["y"] = int(a.args[0]), int(a.args[1])
+                    rec["window"] = _window_at(rec["x"], rec["y"])
+                except (ValueError, OSError):
+                    pass
+            print(_json.dumps(rec, ensure_ascii=False))
+            return rc
 
         return run_one(a.cmd, a.args, a.level, not a.no_plan, a.dry_run)
 
