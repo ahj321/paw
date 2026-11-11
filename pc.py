@@ -12,6 +12,7 @@ ai-pc-control —— 用命令行控制鼠标和键盘，配合视觉模型做 W
     python pc.py launch https://bilibili.com  # 打开网页
     python pc.py launch notepad               # 打开程序
     python pc.py focus "Edge"               # 把标题含 Edge 的窗口切到前台
+    python pc.py wait 2                     # 等 2 秒（页面/动画加载）
     python pc.py click 960 540              # 左键单击
     python pc.py type "hello"               # 输入文字
     python pc.py click 960 540 --dry-run    # 只打印行动表，不执行
@@ -34,6 +35,9 @@ steps.txt 示例：
 
 行动表：每个动作前会打印一行「计划：…」，说明接下来要做什么；
 用 --no-plan 关掉，用 --dry-run 只看计划不执行（预览模式）。
+
+速度：默认每个动作之间隔 0.3s；用 --pause 0.05 加速，用 wait N 显式等页面加载。
+连续动作建议写进 steps.txt 一次跑（run），只在开头和关键节点截图确认。
 
 安全：动作执行前检查鼠标左右键是否同时按住——同时按住即视为急停。
 所有动作之间默认间隔 0.3s。
@@ -78,7 +82,7 @@ CMD_LEVEL = {
     "size": "browse", "shot": "browse", "windows": "browse", "find": "browse",
     "launch": "browse", "move": "browse",
     "desks": "browse", "desk": "browse", "screens": "browse", "watch": "browse",
-    "focus": "browse",
+    "focus": "browse", "wait": "browse",
     "click": "safe", "dclick": "safe", "rclick": "safe", "scroll": "safe",
     "type": "safe", "key": "safe", "hotkey": "safe",
 }
@@ -137,6 +141,8 @@ def _plan_text(cmd: str, args: list) -> str:
         return f"打开：{args[0] if args else '?'}"
     if cmd == "focus":
         return f"把标题含「{args[0] if args else '?'}」的窗口切到前台（不点击）"
+    if cmd == "wait":
+        return f"等 {args[0] if args else '?'} 秒（什么都不做，等页面/动画加载）"
     if cmd == "move":
         return f"把鼠标移动到 ({args[0]}, {args[1]})，不点击"
     if cmd == "click":
@@ -166,19 +172,100 @@ def _do_launch(target: str) -> None:
             subprocess.Popen(target, shell=False)  # noqa: S603 - 用户明确要启动的程序
 
 
-def _type_text(text: str) -> None:
-    if any("\u4e00" <= ch <= "\u9fff" for ch in text):
-        import tkinter as tk
+def _clipboard_get() -> str:
+    """读剪贴板文本（读不到返回空串）。"""
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    CF_UNICODETEXT = 13
+    out = ""
+    user32.GetClipboardData.restype = ctypes.c_void_p
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+    try:
+        if not user32.OpenClipboard(None):
+            return ""
+        try:
+            h = user32.GetClipboardData(CF_UNICODETEXT)
+            if h:
+                p = kernel32.GlobalLock(h)
+                if p:
+                    try:
+                        out = ctypes.wstring_at(p)
+                    finally:
+                        kernel32.GlobalUnlock(h)
+        finally:
+            user32.CloseClipboard()
+    except Exception:
+        return ""
+    return out
 
-        root = tk.Tk()
-        root.withdraw()
-        root.clipboard_clear()
-        root.clipboard_append(text)
-        root.update()
-        pyautogui.hotkey("ctrl", "v")
-        root.destroy()
-    else:
+
+def _clipboard_set(text: str) -> None:
+    """往剪贴板写文本（Win32 API，不依赖 tkinter）。"""
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    CF_UNICODETEXT = 13
+    GMEM_MOVEABLE = 0x0002
+    kernel32.GlobalAlloc.restype = ctypes.c_void_p
+    kernel32.GlobalAlloc.argtypes = [ctypes.c_uint, ctypes.c_size_t]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+    user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+    try:
+        if not user32.OpenClipboard(None):
+            return
+        try:
+            user32.EmptyClipboard()
+            buf = ctypes.create_unicode_buffer(text)
+            size = ctypes.sizeof(buf)
+            h = kernel32.GlobalAlloc(GMEM_MOVEABLE, size)
+            if not h:
+                return
+            p = kernel32.GlobalLock(h)
+            if not p:
+                return
+            ctypes.memmove(p, buf, size)
+            kernel32.GlobalUnlock(h)
+            user32.SetClipboardData(CF_UNICODETEXT, h)
+        finally:
+            user32.CloseClipboard()
+    except Exception:
+        pass
+
+
+def _type_text(text: str) -> None:
+    if all(ord(c) < 128 for c in text):
         pyautogui.typewrite(text, interval=0.02)
+        return
+    # 中文走剪贴板：写进去、等一会儿、粘贴、再把原来的剪贴板还回去，
+    # 免得内容串到别的程序里（之前保存对话框文件名被搅乱就是这么来的）。
+    # 优先用 pyperclip（稳定），没装就退回 Win32 兜底。
+    try:
+        import pyperclip
+    except ImportError:
+        pyperclip = None
+
+    if pyperclip:
+        try:
+            old = pyperclip.paste()
+        except Exception:
+            old = ""
+        pyperclip.copy(text)
+    else:
+        old = _clipboard_get()
+        _clipboard_set(text)
+
+    time.sleep(0.15)
+    pyautogui.hotkey("ctrl", "v")
+    time.sleep(0.2)
+
+    try:
+        if pyperclip:
+            pyperclip.copy(old)
+        else:
+            _clipboard_set(old)
+    except Exception:
+        pass
 
 
 def _list_windows() -> None:
@@ -429,6 +516,11 @@ def run_one(cmd: str, args: list, level: str, show_plan: bool, dry_run: bool) ->
         elif cmd == "focus":
             return _focus_cmd(args)
 
+        elif cmd == "wait":
+            secs = float(args[0]) if args else 1.0
+            time.sleep(max(0.0, secs))
+            print("waited", secs, "s")
+
         elif cmd == "click":
             pyautogui.click(int(args[0]), int(args[1]))
             print("clicked", args[0], args[1])
@@ -499,6 +591,12 @@ def main() -> int:
     ap.add_argument("args", nargs="*")
     ap.add_argument("--delay", type=float, default=0.0, help="动作前等待秒数")
     ap.add_argument(
+        "--pause",
+        type=float,
+        default=0.3,
+        help="每个动作之间的间隔秒数（默认 0.3；想快就设 0.05，页面慢就设 1）",
+    )
+    ap.add_argument(
         "--level",
         default=os.environ.get("PC_LEVEL", "safe"),
         choices=list(LEVEL_ORDER.keys()),
@@ -515,6 +613,8 @@ def main() -> int:
 
     if a.delay:
         time.sleep(a.delay)
+    if a.pause >= 0:
+        pyautogui.PAUSE = a.pause
 
     try:
         if a.cmd == "run":
