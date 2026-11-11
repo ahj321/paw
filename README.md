@@ -51,15 +51,16 @@ python pc.py click 960 540 --delay 2     # 动作前先等 2 秒
 
 | 等级 | 允许 |
 | --- | --- |
-| `open` 末级 | 查看与打开：size / shot / windows / find / open / move |
+| `browse` 末级 | 查看与打开：size / shot / windows / find / launch / move |
 | `safe` 次级 | 再加 click / dclick / rclick / scroll / type / key / hotkey；**但命中「付款、注册注销、删改东西」时拒绝** |
 | `full` 最高级 | 允许一切 |
 
 ```bash
-python pc.py open https://bilibili.com --level open   # 只打开网页
-python pc.py click 960 540 --level safe               # 普通点击可以
-python pc.py type "确认付款" --level safe             # 被拦截
-python pc.py type "确认付款" --level full             # 放行
+python pc.py launch https://bilibili.com --level browse   # 只打开网页
+python pc.py launch notepad --level browse                # 只打开程序
+python pc.py click 960 540 --level safe                   # 普通点击可以
+python pc.py type "确认付款" --level safe                 # 被拦截
+python pc.py type "确认付款" --level full                 # 放行
 ```
 
 `safe` 级的拦截是按**命令 + 文字关键词**判断的「尽力而为」：拦得住明显的付款、注销、删除、发送、格式化，但不认识所有变体与流程（比如点进三步之后的确认页）。真正重要的账号操作，请人来做。
