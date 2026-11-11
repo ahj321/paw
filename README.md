@@ -1,6 +1,6 @@
 # paw 🐾
 
-**给 AI 一双手：看屏幕、点按钮、打字，全是一条命令的事。**
+**进一步提升 AI 的手：看屏幕、点按钮、打字，全是一条命令的事。**
 
 [English](README.en.md) · 中文
 
@@ -10,7 +10,7 @@
 
 - **零配置**：没有服务要起、没有账号要登、不用申请 key；
 - **可离线**：工具本身不联网，只有调模型那一步才需要网；
-- **接 agent 只要一段配置**：自带 MCP server，Claude Desktop / Cursor / Cline / Continue 粘上就接好了；
+- **命令行直接用，也能当插件**：agent 拿着命令行就能跑；想挂进 Claude Desktop / Cursor / Cline / Continue，粘一段 MCP 配置就成；
 - **看得见**：执行前打印行动表，坐标落在哪个窗口、点在什么按钮上，说得清清楚楚。
 
 > 本项目由 deepseek-V4.1-Flash-1017 生成。
