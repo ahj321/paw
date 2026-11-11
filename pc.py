@@ -3,50 +3,66 @@
 """
 ai-pc-control —— 用命令行控制鼠标和键盘，配合视觉模型做 Windows 桌面自动化。
 
-一个最小、无依赖滥用的命令行工具：截图 / 点击 / 输入 / 找图。
-给任何「能看图的模型 + 能跑命令的 agent」当手用。
+一个最小、无依赖滥用的命令行工具：截图 / 点击 / 输入 / 打开页面。
 
 示例：
     python pc.py size                       # 屏幕分辨率
     python pc.py shot screen.png            # 截屏
+    python pc.py open https://bilibili.com  # 打开网页
+    python pc.py open notepad               # 打开程序
     python pc.py click 960 540              # 左键单击
     python pc.py type "hello"               # 输入文字
-    python pc.py find button.png 0.9        # 屏幕上找图，返回坐标
-    python pc.py click 960 540 --level read # 只允许只读动作时会拒绝
     python pc.py click 960 540 --dry-run    # 只打印行动表，不执行
 
-权限等级（--level 或环境变量 PC_LEVEL，默认 full）：
-    read   只能 size / shot / windows / find
-    move   再加 move
-    click  再加 click / dclick / rclick / scroll
-    type   再加 type / key / hotkey
-    full   全部
+权限等级（--level 或环境变量 PC_LEVEL，默认 safe）：
+    open   末级：只能看、只能打开页面/程序（shot/size/windows/find/open/move）
+    safe   次级：再加点击、滚动、打字、按键；
+           但命中「付款 / 注册注销 / 删除改东西」这类危险动作时拒绝
+    full   最高级：允许一切
 
 行动表：每次执行前会打印一行「计划：…」，说明接下来要做什么；
 用 --no-plan 关掉，用 --dry-run 只看计划不执行（预览模式）。
 
 安全：动作执行前检查鼠标左右键是否同时按住——同时按住即视为急停。
 所有动作之间默认间隔 0.3s。
+
+注意：safe 级的危险动作拦截是「按命令和文字关键词」判断的尽力而为，
+不是系统级 ACL——它拦得住明显的「付款 / 删除 / 注销」，但不认识所有变体。
+真正重要的账号操作，还是请人来做。
 """
 
 import argparse
 import ctypes
 import os
+import subprocess
 import sys
 import time
+import webbrowser
 
 import pyautogui
 
 pyautogui.FAILSAFE = False
 pyautogui.PAUSE = 0.3
 
-LEVEL_ORDER = {"read": 0, "move": 1, "click": 2, "type": 3, "full": 4}
+LEVEL_ORDER = {"open": 0, "safe": 1, "full": 2}
 CMD_LEVEL = {
-    "size": "read", "shot": "read", "windows": "read", "find": "read",
-    "move": "move",
-    "click": "click", "dclick": "click", "rclick": "click", "scroll": "click",
-    "type": "type", "key": "type", "hotkey": "type",
+    "size": "open", "shot": "open", "windows": "open", "find": "open",
+    "open": "open", "move": "open",
+    "click": "safe", "dclick": "safe", "rclick": "safe", "scroll": "safe",
+    "type": "safe", "key": "safe", "hotkey": "safe",
 }
+
+# safe 级下，文本里出现这些词就拒绝（付款 / 注册注销 / 删改东西）
+DANGER_WORDS = [
+    "付款", "支付", "购买", "下单", "结账", "充值", "转账", "扣款", "扫码",
+    "注册", "注销", "登录", "登出", "绑定", "实名", "密码", "验证码",
+    "删除", "卸载", "格式化", "清空", "移除", "移除文件", "删除文件", "抹掉",
+    "覆盖保存", "发送", "发布", "提交订单", "退款",
+    "pay", "purchase", "checkout", "transfer", "subscribe",
+    "sign up", "signup", "sign out", "signout", "log in", "login", "logout",
+    "register", "delete", "remove", "uninstall", "format", "erase", "wipe",
+    "rm -rf", "drop table",
+]
 
 
 def _emergency_pressed() -> bool:
@@ -61,22 +77,25 @@ def _emergency_pressed() -> bool:
 
 
 def _level_allows(level: str, cmd: str) -> bool:
-    need = LEVEL_ORDER[CMD_LEVEL[cmd]]
-    return LEVEL_ORDER[level] >= need
+    return LEVEL_ORDER[level] >= LEVEL_ORDER[CMD_LEVEL[cmd]]
+
+
+def _danger_hits(text: str) -> list:
+    low = text.lower()
+    return [w for w in DANGER_WORDS if w in low]
 
 
 def _plan_text(cmd: str, args: list) -> str:
-    """给人类看的行动表：这一步打算做什么。"""
     if cmd == "size":
         return "读取屏幕分辨率（不改任何东西）"
     if cmd == "shot":
-        out = args[0] if args else "screen.png"
-        return f"截屏并保存到 {out}（不改任何东西）"
+        return f"截屏并保存到 {args[0] if args else 'screen.png'}（不改任何东西）"
     if cmd == "windows":
         return "列出当前窗口和位置（不改任何东西）"
     if cmd == "find":
-        tpl = args[0] if args else "?"
-        return f"在屏幕上查找图片 {tpl}，返回坐标（不点击）"
+        return f"在屏幕上查找图片 {args[0] if args else '?'}，返回坐标（不点击）"
+    if cmd == "open":
+        return f"打开：{args[0] if args else '?'}"
     if cmd == "move":
         return f"把鼠标移动到 ({args[0]}, {args[1]})，不点击"
     if cmd == "click":
@@ -96,12 +115,22 @@ def _plan_text(cmd: str, args: list) -> str:
     return cmd
 
 
+def _do_open(target: str) -> None:
+    if target.startswith(("http://", "https://")):
+        webbrowser.open(target)
+    else:
+        if os.path.exists(target):
+            os.startfile(target)  # noqa: S606 - 用户明确要打开这个文件
+        else:
+            subprocess.Popen(target, shell=False)  # noqa: S603 - 用户明确要启动的程序
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="control the mouse and keyboard from the CLI")
     ap.add_argument(
         "cmd",
         choices=[
-            "size", "shot", "click", "dclick", "rclick", "move",
+            "size", "shot", "click", "dclick", "rclick", "move", "open",
             "type", "key", "hotkey", "scroll", "find", "windows",
         ],
     )
@@ -109,9 +138,9 @@ def main() -> int:
     ap.add_argument("--delay", type=float, default=0.0, help="动作前等待秒数")
     ap.add_argument(
         "--level",
-        default=os.environ.get("PC_LEVEL", "full"),
+        default=os.environ.get("PC_LEVEL", "safe"),
         choices=list(LEVEL_ORDER.keys()),
-        help="权限等级：read / move / click / type / full（默认 full，可用 PC_LEVEL 环境变量）",
+        help="权限等级：open / safe / full（默认 safe，可用 PC_LEVEL 环境变量）",
     )
     ap.add_argument("--no-plan", action="store_true", help="不打印行动表")
     ap.add_argument("--dry-run", action="store_true", help="只打印行动表，不执行")
@@ -126,6 +155,17 @@ def main() -> int:
             file=sys.stderr,
         )
         return 3
+
+    payload = " ".join(a.args)
+    if a.level == "safe":
+        hits = _danger_hits(payload)
+        if hits:
+            print(
+                f"安全拦截：这一步看起来涉及「{hits[0]}」，safe 级不允许——"
+                "要人工确认，或改用 --level full",
+                file=sys.stderr,
+            )
+            return 4
 
     if not a.no_plan:
         print(f"计划：{_plan_text(a.cmd, a.args)}", file=sys.stderr)
@@ -147,6 +187,10 @@ def main() -> int:
             img = pyautogui.screenshot()
             img.save(out)
             print(out, img.size)
+
+        elif a.cmd == "open":
+            _do_open(a.args[0])
+            print("opened", a.args[0])
 
         elif a.cmd == "click":
             pyautogui.click(int(a.args[0]), int(a.args[1]))

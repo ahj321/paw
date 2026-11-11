@@ -47,21 +47,22 @@ python pc.py click 960 540 --delay 2     # 动作前先等 2 秒
 
 ## 权限等级
 
-用 `--level`（或环境变量 `PC_LEVEL`）限制这个工具能做什么，默认 `full`：
+三档，用 `--level`（或环境变量 `PC_LEVEL`）选，默认 `safe`：
 
-| 等级 | 允许的动作 |
+| 等级 | 允许 |
 | --- | --- |
-| `read` | size / shot / windows / find（只看，不动） |
-| `move` | 再加 move |
-| `click` | 再加 click / dclick / rclick / scroll |
-| `type` | 再加 type / key / hotkey |
-| `full` | 全部 |
+| `open` 末级 | 查看与打开：size / shot / windows / find / open / move |
+| `safe` 次级 | 再加 click / dclick / rclick / scroll / type / key / hotkey；**但命中「付款、注册注销、删改东西」时拒绝** |
+| `full` 最高级 | 允许一切 |
 
 ```bash
-python pc.py shot screen.png --level read     # 只读够了
-python pc.py click 960 540 --level click      # 允许点击，不允许打字
-python pc.py type "hello" --level read        # 被拒绝：权限不足
+python pc.py open https://bilibili.com --level open   # 只打开网页
+python pc.py click 960 540 --level safe               # 普通点击可以
+python pc.py type "确认付款" --level safe             # 被拦截
+python pc.py type "确认付款" --level full             # 放行
 ```
+
+`safe` 级的拦截是按**命令 + 文字关键词**判断的「尽力而为」：拦得住明显的付款、注销、删除、发送、格式化，但不认识所有变体与流程（比如点进三步之后的确认页）。真正重要的账号操作，请人来做。
 
 ## 行动表
 
