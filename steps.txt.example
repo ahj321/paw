@@ -1,0 +1,7 @@
+# 一次跑一串动作：python pc.py run steps.txt
+# 每行一条；支持引号与 # 注释；每一步都过同样的权限检查
+
+launch notepad
+click 300 200
+type "hello"
+hotkey ctrl s
