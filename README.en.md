@@ -30,6 +30,20 @@ python paw.py shot s.png    # take a screenshot
 python paw.py scale         # prints the display scale (e.g. 1.50x on 150%)
 ```
 
+## What it looks like
+
+A few numbers and one line in the terminal. It tells you what it is about to do, and in which window:
+
+![CLI output](docs/cli.png)
+
+Multi-step actions go in a `steps.txt`; `run` prints the plan for every step before touching anything:
+
+![Action plan](docs/steps.png)
+
+Plugging it into an agent is one config block:
+
+![MCP config](docs/mcp.png)
+
 ## Install
 
 ```bash
@@ -151,6 +165,20 @@ Then add a server entry to your client config (adjust the path):
 Restart the client and you should see 14 tools: `screen_size`, `display_scale`, `screenshot`, `click`, `move`, `drag`, `type_text`, `press_key`, `press_hotkey`, `scroll`, `focus_window`, `list_windows`, `launch`, `wait`.
 
 You can also skip MCP entirely: `SKILL.md` is a plain instruction file for agents that tells them the command table and when to reach for it.
+
+## FAQ
+
+**Clicking does nothing?**
+Focus the target window first: `python paw.py focus "Notepad"`. The first click often only activates the window.
+
+**The click lands off by a few pixels?**
+Run `python paw.py scale`. At 150% scaling, screenshot coordinates are physical pixels — multiply anything measured on a preview by 1.5.
+
+**A borderless fullscreen game screenshots as black?**
+System-level capture can miss some exclusive-fullscreen surfaces. Switch the game to windowed or borderless-windowed mode.
+
+**Chinese/Japanese text won't type?**
+`type` goes through the clipboard (backup, paste, restore). If another app holds the clipboard, it fails — retrying usually works.
 
 ## Risks
 
