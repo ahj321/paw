@@ -534,7 +534,9 @@ def run_one(cmd: str, args: list, level: str, show_plan: bool, dry_run: bool) ->
             i = 0
             while i < len(rest):
                 if rest[i] == "--crop" and i + 1 < len(rest):
-                    crop = tuple(int(v) for v in rest[i + 1].split(","))
+                    c = tuple(int(v) for v in rest[i + 1].split(","))
+                    if len(c) == 4:
+                        crop = (c[0], c[1], c[0] + c[2], c[1] + c[3])
                     i += 2
                 elif rest[i] == "--jpg":
                     jpg = True
