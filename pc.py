@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 ai-pc-control —— 用命令行控制鼠标和键盘，配合视觉模型做 Windows 桌面自动化。
@@ -44,10 +44,10 @@ import pyautogui
 pyautogui.FAILSAFE = False
 pyautogui.PAUSE = 0.3
 
-LEVEL_ORDER = {"open": 0, "safe": 1, "full": 2}
+LEVEL_ORDER = {"browse": 0, "safe": 1, "full": 2}
 CMD_LEVEL = {
-    "size": "open", "shot": "open", "windows": "open", "find": "open",
-    "open": "open", "move": "open",
+    "size": "browse", "shot": "browse", "windows": "browse", "find": "browse",
+    "launch": "browse", "open": "browse", "move": "browse",
     "click": "safe", "dclick": "safe", "rclick": "safe", "scroll": "safe",
     "type": "safe", "key": "safe", "hotkey": "safe",
 }
@@ -94,7 +94,7 @@ def _plan_text(cmd: str, args: list) -> str:
         return "列出当前窗口和位置（不改任何东西）"
     if cmd == "find":
         return f"在屏幕上查找图片 {args[0] if args else '?'}，返回坐标（不点击）"
-    if cmd == "open":
+    if cmd in ("open", "launch"):
         return f"打开：{args[0] if args else '?'}"
     if cmd == "move":
         return f"把鼠标移动到 ({args[0]}, {args[1]})，不点击"
@@ -131,7 +131,7 @@ def main() -> int:
         "cmd",
         choices=[
             "size", "shot", "click", "dclick", "rclick", "move", "open",
-            "type", "key", "hotkey", "scroll", "find", "windows",
+            "type", "key", "hotkey", "scroll", "find", "windows", "launch",
         ],
     )
     ap.add_argument("args", nargs="*")
@@ -140,7 +140,7 @@ def main() -> int:
         "--level",
         default=os.environ.get("PC_LEVEL", "safe"),
         choices=list(LEVEL_ORDER.keys()),
-        help="权限等级：open / safe / full（默认 safe，可用 PC_LEVEL 环境变量）",
+        help="权限等级：browse / safe / full（默认 safe，可用 PC_LEVEL 环境变量）",
     )
     ap.add_argument("--no-plan", action="store_true", help="不打印行动表")
     ap.add_argument("--dry-run", action="store_true", help="只打印行动表，不执行")
@@ -188,7 +188,7 @@ def main() -> int:
             img.save(out)
             print(out, img.size)
 
-        elif a.cmd == "open":
+        elif a.cmd in ("open", "launch"):
             _do_open(a.args[0])
             print("opened", a.args[0])
 
@@ -266,3 +266,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
