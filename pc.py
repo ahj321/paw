@@ -17,18 +17,30 @@ ai-pc-control —— 用命令行控制鼠标和键盘，配合视觉模型做 W
     python pc.py scroll -3                  # 向下滚
     python pc.py find button.png 0.9        # 屏幕上找图，返回坐标
 
-安全：默认开启 pyautogui 的 FAILSAFE——鼠标甩到屏幕左上角会立刻中止，
+安全：动作执行前检查鼠标左右键是否同时按住——同时按住即视为急停，直接退出，
 避免自动化失控。所有动作之间有 0.3s 间隔。
 """
 
 import argparse
+import ctypes
 import sys
 import time
 
 import pyautogui
 
-pyautogui.FAILSAFE = True
+pyautogui.FAILSAFE = False
 pyautogui.PAUSE = 0.3
+
+
+def _emergency_pressed() -> bool:
+    """左右键同时按住 = 急停。"""
+    try:
+        user32 = ctypes.windll.user32
+        left = user32.GetAsyncKeyState(0x01) & 0x8000
+        right = user32.GetAsyncKeyState(0x02) & 0x8000
+        return bool(left and right)
+    except Exception:
+        return False
 
 
 def _type_text(text: str) -> None:
@@ -74,6 +86,10 @@ def main() -> int:
 
     if a.delay:
         time.sleep(a.delay)
+
+    if a.cmd not in ("size", "shot", "windows") and _emergency_pressed():
+        print("急停：检测到鼠标左右键同时按下，已中止", file=sys.stderr)
+        return 1
 
     try:
         if a.cmd == "size":
