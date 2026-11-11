@@ -49,6 +49,12 @@ import webbrowser
 
 import pyautogui
 
+try:
+    sys.stdout.reconfigure(errors='replace')
+    sys.stderr.reconfigure(errors='replace')
+except Exception:
+    pass
+
 pyautogui.FAILSAFE = False
 pyautogui.PAUSE = 0.3
 
@@ -56,7 +62,7 @@ LEVEL_ORDER = {"browse": 0, "safe": 1, "full": 2}
 CMD_LEVEL = {
     "size": "browse", "shot": "browse", "windows": "browse", "find": "browse",
     "launch": "browse", "move": "browse",
-    "desks": "browse", "desk": "browse",
+    "desks": "browse", "desk": "browse", "screens": "browse",
     "click": "safe", "dclick": "safe", "rclick": "safe", "scroll": "safe",
     "type": "safe", "key": "safe", "hotkey": "safe",
 }
@@ -164,6 +170,54 @@ def _list_windows() -> None:
             print(f"{w.left:>6} {w.top:>6} {w.width:>6} {w.height:>6}  {title}")
 
 
+def _screens_cmd(args: list) -> int:
+    """用文字说清楚每个虚拟桌面上正开着什么（谁在前台）。"""
+    try:
+        import pygetwindow as gw
+    except ImportError:
+        print("需要 pygetwindow：pip install pygetwindow", file=sys.stderr)
+        return 1
+    try:
+        from pyvda import VirtualDesktop
+    except ImportError:
+        print("需要 pyvda：pip install pyvda", file=sys.stderr)
+        return 1
+
+    try:
+        cur = VirtualDesktop.current().number
+    except Exception:
+        cur = -1
+
+    fg = gw.getActiveWindow()
+    groups = {}
+    for w in gw.getAllWindows():
+        title = (w.title or "").strip()
+        if not title or w.width <= 0 or w.height <= 0:
+            continue
+        try:
+            desk = VirtualDesktop.get_desktop_of_window(w._hWnd).number
+        except Exception:
+            desk = cur  # 查不到归属时，按当前桌面算
+        groups.setdefault(desk, []).append(w)
+
+    if not groups:
+        print("没有可见窗口")
+        return 0
+
+    for desk in sorted(groups):
+        if desk == cur:
+            head = f"桌面 {desk} *（当前）"
+        elif desk == -1:
+            head = "未归属桌面"
+        else:
+            head = f"桌面 {desk}"
+        print(head)
+        for w in groups[desk]:
+            mark = "  ← 前台" if fg is not None and w._hWnd == fg._hWnd else ""
+            print(f"  - {w.title}  [{w.width}x{w.height}]{mark}")
+    return 0
+
+
 def _desk_cmd(args: list) -> int:
     """虚拟桌面管理：list / new / switch <n> / close。"""
     try:
@@ -232,6 +286,8 @@ def run_one(cmd: str, args: list, level: str, show_plan: bool, dry_run: bool) ->
     if dry_run:
         return 0
 
+    if cmd == "screens":
+        return _screens_cmd(args)
     if cmd in ("desks", "desk"):
         return _desk_cmd(args if cmd == "desk" else ["list"])
 
@@ -398,4 +454,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
 
