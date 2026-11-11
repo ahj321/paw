@@ -45,6 +45,35 @@ python pc.py windows                     # 列出窗口及位置（需 pygetwind
 python pc.py click 960 540 --delay 2     # 动作前先等 2 秒
 ```
 
+## 权限等级
+
+用 `--level`（或环境变量 `PC_LEVEL`）限制这个工具能做什么，默认 `full`：
+
+| 等级 | 允许的动作 |
+| --- | --- |
+| `read` | size / shot / windows / find（只看，不动） |
+| `move` | 再加 move |
+| `click` | 再加 click / dclick / rclick / scroll |
+| `type` | 再加 type / key / hotkey |
+| `full` | 全部 |
+
+```bash
+python pc.py shot screen.png --level read     # 只读够了
+python pc.py click 960 540 --level click      # 允许点击，不允许打字
+python pc.py type "hello" --level read        # 被拒绝：权限不足
+```
+
+## 行动表
+
+每次执行前会先打印一行「计划：…」，说明这一步接下来要做什么，例如：
+
+```
+计划：在 (960, 540) 单击鼠标左键
+```
+
+- `--no-plan`：关掉行动表（你信任它时）
+- `--dry-run`：只打印行动表，不执行（预览模式）
+
 ## 和视觉模型一起用
 
 典型循环（任何 chat 模型都能做，不绑定厂商）：
