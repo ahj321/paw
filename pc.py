@@ -62,7 +62,7 @@ LEVEL_ORDER = {"browse": 0, "safe": 1, "full": 2}
 CMD_LEVEL = {
     "size": "browse", "shot": "browse", "windows": "browse", "find": "browse",
     "launch": "browse", "move": "browse",
-    "desks": "browse", "desk": "browse", "screens": "browse",
+    "desks": "browse", "desk": "browse", "screens": "browse", "watch": "browse",
     "click": "safe", "dclick": "safe", "rclick": "safe", "scroll": "safe",
     "type": "safe", "key": "safe", "hotkey": "safe",
 }
@@ -168,6 +168,66 @@ def _list_windows() -> None:
         title = (w.title or "").strip()
         if title:
             print(f"{w.left:>6} {w.top:>6} {w.width:>6} {w.height:>6}  {title}")
+
+
+def _idle_seconds() -> float:
+    """距上次键鼠输入过了多少秒。"""
+    try:
+        class LASTINPUTINFO(ctypes.Structure):
+            _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+
+        lii = LASTINPUTINFO()
+        lii.cbSize = ctypes.sizeof(LASTINPUTINFO)
+        if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii)):
+            return -1.0
+        millis = ctypes.windll.kernel32.GetTickCount() - lii.dwTime
+        return round(millis / 1000.0, 1)
+    except Exception:
+        return -1.0
+
+
+def _watch_cmd(args: list) -> int:
+    """实时说明「现在在干什么」：前台窗口、标题变化、鼠标位置、空闲时间。"""
+    try:
+        import pygetwindow as gw
+    except ImportError:
+        print("需要 pygetwindow：pip install pygetwindow", file=sys.stderr)
+        return 1
+
+    interval = float(args[0]) if args else 2.0
+    prev = {}
+    print(f"每 {interval}s 刷新一次，Ctrl+C 退出", file=sys.stderr)
+    try:
+        while True:
+            now = time.strftime("%H:%M:%S")
+            fg = gw.getActiveWindow()
+            fg_title = (fg.title or "").strip() if fg else "(无)"
+            fg_size = f"{fg.width}x{fg.height}" if fg else "-"
+            pos = pyautogui.position()
+            idle = _idle_seconds()
+            idle_txt = f"{idle}s" if idle >= 0 else "?"
+            print(
+                f"[{now}] 前台：{fg_title}  [{fg_size}]  ｜ 鼠标 ({pos.x},{pos.y}) ｜ 空闲 {idle_txt}",
+                flush=True,
+            )
+
+            cur = {}
+            for w in gw.getAllWindows():
+                t = (w.title or "").strip()
+                if t and w.width > 0:
+                    cur[w._hWnd] = t
+            for hwnd, t in cur.items():
+                if hwnd in prev and prev[hwnd] != t:
+                    print(f"           ↳ 窗口变化：{prev[hwnd]!r} → {t!r}", flush=True)
+            for hwnd, t in cur.items():
+                if hwnd not in prev:
+                    print(f"           ↳ 新窗口：{t!r}", flush=True)
+            prev = cur
+
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        print("已停止", file=sys.stderr)
+        return 0
 
 
 def _screens_cmd(args: list) -> int:
@@ -286,6 +346,8 @@ def run_one(cmd: str, args: list, level: str, show_plan: bool, dry_run: bool) ->
     if dry_run:
         return 0
 
+    if cmd == "watch":
+        return _watch_cmd(args)
     if cmd == "screens":
         return _screens_cmd(args)
     if cmd in ("desks", "desk"):
@@ -454,6 +516,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 
 
 

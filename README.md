@@ -52,6 +52,7 @@ python pc.py scroll -3                   # 向下滚 3 格
 python pc.py find button.png 0.9         # 在屏幕上找图，返回坐标
 python pc.py windows                     # 列出窗口及位置（需 pygetwindow）
 python pc.py screens                     # 每块虚拟桌面上开着什么、谁在前台（文字）
+python pc.py watch 2                     # 实时：现在前台是什么、在干什么（Ctrl+C 退出）
 python pc.py desks                       # 列出虚拟桌面（* 是当前）
 python pc.py desk new                    # 新建虚拟桌面
 python pc.py desk switch 2               # 切到第 2 个桌面
@@ -123,5 +124,6 @@ python pc.py type "确认付款" --level full                 # 放行
 ## License
 
 MIT
+
 
 
