@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ai-pc-control 的本地 Web 看板。
+paw 的本地 Web 看板。
 
     python serve.py            # 打开 http://127.0.0.1:8000
     python serve.py 8765       # 换端口
@@ -90,7 +90,7 @@ def _run(cmd: str, args: list) -> dict:
 
 PAGE = r"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ai-pc-control</title>
+<title>paw</title>
 <style>
 :root{color-scheme:dark}
 *{box-sizing:border-box}
@@ -120,7 +120,7 @@ pre{background:#14161a;border:1px solid #262b33;border-radius:8px;padding:10px;m
 .good{color:#8fe3a3}
 </style></head><body>
 <header>
-  <h1>ai-pc-control</h1>
+  <h1>paw</h1>
   <span class="pill">权限 <select id="level">
     <option value="browse">browse</option><option value="safe">safe</option><option value="full">full</option>
   </select></span>
@@ -192,7 +192,7 @@ refresh(); setInterval(refresh, 1500);
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "ai-pc-control"
+    server_version = "paw"
 
     def _send(self, body: bytes, ctype: str, code: int = 200) -> None:
         self.send_response(code)
@@ -262,7 +262,7 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> int:
     import argparse
 
-    ap = argparse.ArgumentParser(description="ai-pc-control 本地看板")
+    ap = argparse.ArgumentParser(description="paw 本地看板")
     ap.add_argument("port", nargs="?", type=int, default=8000, help="端口，默认 8000")
     ap.add_argument("--host", default="127.0.0.1", help="监听地址，默认只看本机")
     a = ap.parse_args()
