@@ -245,13 +245,18 @@ def _plan_text(cmd: str, args: list) -> str:
 
 
 def _do_launch(target: str) -> None:
-    if target.startswith(("http://", "https://")):
-        webbrowser.open(target)
+    if "://" in target:
+        # http(s) 与 steam://、ms-settings: 这类自定义协议，都交给系统处理
+        try:
+            os.startfile(target)  # noqa: S606 - 用户明确要打开这个地址
+            return
+        except Exception:
+            webbrowser.open(target)
+            return
+    if os.path.exists(target):
+        os.startfile(target)  # noqa: S606 - 用户明确要打开这个文件
     else:
-        if os.path.exists(target):
-            os.startfile(target)  # noqa: S606 - 用户明确要打开这个文件
-        else:
-            subprocess.Popen(target, shell=False)  # noqa: S603 - 用户明确要启动的程序
+        subprocess.Popen(target, shell=False)  # noqa: S603 - 用户明确要启动的程序
 
 
 def _clipboard_get() -> str:
