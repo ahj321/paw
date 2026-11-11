@@ -4,3 +4,6 @@
 .env
 
 NUL
+dist/
+*.egg-info/
+build/
