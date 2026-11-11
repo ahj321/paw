@@ -116,6 +116,35 @@ The intended setup is an agent with a **vision-capable model API**: hand it the 
 
 `shot` and `click` both use physical pixels, so screenshot coordinates work directly. Coordinates estimated from a thumbnail or a chat preview do **not** — run `python pc.py scale` (e.g. at 150% you multiply preview coordinates by 1.5).
 
+## With an agent (MCP)
+
+`paw_mcp.py` is an MCP server that wraps the commands as tools (`screenshot`, `click`, `type_text`, `focus_window`, …). **If your client speaks MCP, you don't change any paw code.**
+
+```bash
+pip install "mcp[cli]"
+```
+
+Then add a server entry to your client config (adjust the path):
+
+**Claude Desktop** (`claude_desktop_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "paw": {
+      "command": "python",
+      "args": ["D:/tools/paw/paw_mcp.py"]
+    }
+  }
+}
+```
+
+**Cursor** (`.cursor/mcp.json`), **Cline**, **Continue**, **Windsurf**: same idea — `command = python`, `args = ["<path>/paw_mcp.py"]`, stdio transport. The field may be called `mcpServers`, `servers` or `mcp` depending on the client.
+
+Restart the client and you should see 14 tools: `screen_size`, `display_scale`, `screenshot`, `click`, `move`, `drag`, `type_text`, `press_key`, `press_hotkey`, `scroll`, `focus_window`, `list_windows`, `launch`, `wait`.
+
+You can also skip MCP entirely: `SKILL.md` is a plain instruction file for agents that tells them the command table and when to reach for it.
+
 ## Risks
 
 - It really moves your mouse and types on your keyboard — use it at your own risk.
