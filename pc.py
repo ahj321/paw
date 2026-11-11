@@ -259,11 +259,11 @@ def _read_steps(path: str) -> list:
     if path == "-":
         text = sys.stdin.read()
     else:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8-sig") as f:
             text = f.read()
     steps = []
     for line in text.splitlines():
-        line = line.strip()
+        line = line.strip().lstrip("\ufeff")
         if not line or line.startswith("#"):
             continue
         steps.append(line)
