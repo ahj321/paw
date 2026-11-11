@@ -56,6 +56,7 @@ LEVEL_ORDER = {"browse": 0, "safe": 1, "full": 2}
 CMD_LEVEL = {
     "size": "browse", "shot": "browse", "windows": "browse", "find": "browse",
     "launch": "browse", "move": "browse",
+    "desks": "browse", "desk": "browse",
     "click": "safe", "dclick": "safe", "rclick": "safe", "scroll": "safe",
     "type": "safe", "key": "safe", "hotkey": "safe",
 }
@@ -101,6 +102,11 @@ def _plan_text(cmd: str, args: list) -> str:
         return f"截屏并保存到 {args[0] if args else 'screen.png'}（不改任何东西）"
     if cmd == "windows":
         return "列出当前窗口和位置（不改任何东西）"
+    if cmd == "desks":
+        return "列出虚拟桌面和当前所在桌面（不改任何东西）"
+    if cmd == "desk":
+        sub = args[0] if args else "list"
+        return f"虚拟桌面操作：{sub}（{' '.join(args[1:])}）"
     if cmd == "find":
         return f"在屏幕上查找图片 {args[0] if args else '?'}，返回坐标（不点击）"
     if cmd == "launch":
@@ -158,6 +164,44 @@ def _list_windows() -> None:
             print(f"{w.left:>6} {w.top:>6} {w.width:>6} {w.height:>6}  {title}")
 
 
+def _desk_cmd(args: list) -> int:
+    """虚拟桌面管理：list / new / switch <n> / close。"""
+    try:
+        from pyvda import VirtualDesktop, get_virtual_desktops
+    except ImportError:
+        print("需要 pyvda：pip install pyvda", file=sys.stderr)
+        return 1
+
+    sub = args[0] if args else "list"
+    try:
+        if sub == "list":
+            cur = VirtualDesktop.current()
+            for d in get_virtual_desktops():
+                mark = " *" if d.number == cur.number else ""
+                print(f"{d.number}{mark}")
+            return 0
+        if sub == "new":
+            d = VirtualDesktop.create()
+            print("created", d.number)
+            return 0
+        if sub == "switch":
+            n = int(args[1])
+            VirtualDesktop(n).go()
+            print("switched", n)
+            return 0
+        if sub == "close":
+            d = VirtualDesktop.current()
+            n = d.number
+            d.remove()
+            print("closed", n)
+            return 0
+        print(f"未知子命令：{sub}（list / new / switch <n> / close）", file=sys.stderr)
+        return 2
+    except Exception as e:  # noqa: BLE001 - 桌面 API 出错时给出人能看懂的提示
+        print(f"虚拟桌面操作失败：{e}", file=sys.stderr)
+        return 1
+
+
 def run_one(cmd: str, args: list, level: str, show_plan: bool, dry_run: bool) -> int:
     """执行一条动作。返回 0 成功；非 0 表示失败/被拦截。"""
     if cmd not in CMD_LEVEL:
@@ -187,6 +231,9 @@ def run_one(cmd: str, args: list, level: str, show_plan: bool, dry_run: bool) ->
 
     if dry_run:
         return 0
+
+    if cmd in ("desks", "desk"):
+        return _desk_cmd(args if cmd == "desk" else ["list"])
 
     if cmd not in ("size", "shot", "windows") and _emergency_pressed():
         print("急停：检测到鼠标左右键同时按下，已中止", file=sys.stderr)
@@ -351,3 +398,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

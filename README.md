@@ -1,4 +1,4 @@
-# ai-pc-control
+﻿# ai-pc-control
 
 用命令行控制鼠标和键盘的小工具，给「能看图的模型 + 能执行命令的 agent」当手用。
 
@@ -29,6 +29,8 @@
 pip install pyautogui pillow
 # 可选：列出窗口
 pip install pygetwindow
+# 可选：虚拟桌面
+pip install pyvda
 ```
 
 Windows / macOS / Linux（X11）都可运行，Windows 上中文输入已处理好（走剪贴板）。
@@ -49,6 +51,10 @@ python pc.py hotkey ctrl s               # 组合键
 python pc.py scroll -3                   # 向下滚 3 格
 python pc.py find button.png 0.9         # 在屏幕上找图，返回坐标
 python pc.py windows                     # 列出窗口及位置（需 pygetwindow）
+python pc.py desks                       # 列出虚拟桌面（* 是当前）
+python pc.py desk new                    # 新建虚拟桌面
+python pc.py desk switch 2               # 切到第 2 个桌面
+python pc.py desk close                  # 关闭当前虚拟桌面
 python pc.py click 960 540 --delay 2     # 动作前先等 2 秒
 python pc.py run steps.txt               # 一次跑一串动作（每行一条）
 python pc.py run steps.txt --parallel    # 并行执行打开/查看类步骤
@@ -116,3 +122,4 @@ python pc.py type "确认付款" --level full                 # 放行
 ## License
 
 MIT
+
