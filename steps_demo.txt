@@ -1,0 +1,5 @@
+﻿# 打开记事本，点它的空白处，再打一行字
+launch notepad
+focus 记事本
+click 960 540
+type "hello from paw"
