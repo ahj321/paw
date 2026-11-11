@@ -8,14 +8,14 @@ ai-pc-control —— 用命令行控制鼠标和键盘，配合视觉模型做 W
 示例：
     python pc.py size                       # 屏幕分辨率
     python pc.py shot screen.png            # 截屏
-    python pc.py open https://bilibili.com  # 打开网页
-    python pc.py open notepad               # 打开程序
+    python pc.py launch https://bilibili.com  # 打开网页
+    python pc.py launch notepad               # 打开程序
     python pc.py click 960 540              # 左键单击
     python pc.py type "hello"               # 输入文字
     python pc.py click 960 540 --dry-run    # 只打印行动表，不执行
 
 权限等级（--level 或环境变量 PC_LEVEL，默认 safe）：
-    open   末级：只能看、只能打开页面/程序（shot/size/windows/find/open/move）
+    browse 末级：只能看、只能打开页面/程序（shot/size/windows/find/launch/move）
     safe   次级：再加点击、滚动、打字、按键；
            但命中「付款 / 注册注销 / 删除改东西」这类危险动作时拒绝
     full   最高级：允许一切
@@ -47,7 +47,7 @@ pyautogui.PAUSE = 0.3
 LEVEL_ORDER = {"browse": 0, "safe": 1, "full": 2}
 CMD_LEVEL = {
     "size": "browse", "shot": "browse", "windows": "browse", "find": "browse",
-    "launch": "browse", "open": "browse", "move": "browse",
+    "launch": "browse", "move": "browse",
     "click": "safe", "dclick": "safe", "rclick": "safe", "scroll": "safe",
     "type": "safe", "key": "safe", "hotkey": "safe",
 }
@@ -94,7 +94,7 @@ def _plan_text(cmd: str, args: list) -> str:
         return "列出当前窗口和位置（不改任何东西）"
     if cmd == "find":
         return f"在屏幕上查找图片 {args[0] if args else '?'}，返回坐标（不点击）"
-    if cmd in ("open", "launch"):
+    if cmd == "launch":
         return f"打开：{args[0] if args else '?'}"
     if cmd == "move":
         return f"把鼠标移动到 ({args[0]}, {args[1]})，不点击"
@@ -115,7 +115,7 @@ def _plan_text(cmd: str, args: list) -> str:
     return cmd
 
 
-def _do_open(target: str) -> None:
+def _do_launch(target: str) -> None:
     if target.startswith(("http://", "https://")):
         webbrowser.open(target)
     else:
@@ -130,8 +130,8 @@ def main() -> int:
     ap.add_argument(
         "cmd",
         choices=[
-            "size", "shot", "click", "dclick", "rclick", "move", "open",
-            "type", "key", "hotkey", "scroll", "find", "windows", "launch",
+            "size", "shot", "click", "dclick", "rclick", "move", "launch",
+            "launch", "type", "key", "hotkey", "scroll", "find", "windows",
         ],
     )
     ap.add_argument("args", nargs="*")
@@ -188,9 +188,9 @@ def main() -> int:
             img.save(out)
             print(out, img.size)
 
-        elif a.cmd in ("open", "launch"):
-            _do_open(a.args[0])
-            print("opened", a.args[0])
+        elif a.cmd == "launch":
+            _do_launch(a.args[0])
+            print("launched", a.args[0])
 
         elif a.cmd == "click":
             pyautogui.click(int(a.args[0]), int(a.args[1]))
@@ -266,4 +266,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
 
