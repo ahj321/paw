@@ -1,8 +1,10 @@
-# paw 🐾
+﻿# paw 馃惥
 
-**A step further for your AI's hands: look at the screen, click the button, type the text — one command at a time.**
+[![CI](https://github.com/ahj321/paw/actions/workflows/ci.yml/badge.svg)](https://github.com/ahj321/paw/actions/workflows/ci.yml)
 
-[中文](README.md) · English
+**A step further for your AI's hands: look at the screen, click the button, type the text 鈥?one command at a time.**
+
+[涓枃](README.md) 路 English
 
 ![paw demo](assets/demo.gif)
 
@@ -17,7 +19,7 @@ The model does the looking, paw does the moving: hand it a screenshot, it tells 
 
 ## Why
 
-Agents can already read code and write docs, but the last mile — actually clicking that button for you — usually costs a framework, an environment setup and an API key. paw compresses it into one command: **no extra key, no framework**, just `pip install pyautogui pillow` and it moves.
+Agents can already read code and write docs, but the last mile 鈥?actually clicking that button for you 鈥?usually costs a framework, an environment setup and an API key. paw compresses it into one command: **no extra key, no framework**, just `pip install pyautogui pillow` and it moves.
 
 It does one thing: it splits "look at the screen" and "act on the screen" into two commands and lets the model chain them itself. It works offline; with a cloud model, only the model call needs the network.
 
@@ -98,7 +100,7 @@ type "report"   # name the file
 
 | level | meaning |
 | --- | --- |
-| `browse` | read-only commands (size, shot, windows, scale…) |
+| `browse` | read-only commands (size, shot, windows, scale鈥? |
 | `safe` | default: blocks obviously dangerous actions |
 | `full` | everything allowed |
 
@@ -113,7 +115,7 @@ The emergency stop is pressing left and right mouse buttons at the same time.
 Before acting, paw prints a plan like:
 
 ```
-计划：在 (960, 540) 单击鼠标左键（所在窗口：记事本 - 未命名）
+璁″垝锛氬湪 (960, 540) 鍗曞嚮榧犳爣宸﹂敭锛堟墍鍦ㄧ獥鍙ｏ細璁颁簨鏈?- 鏈懡鍚嶏級
 ```
 
 Coordinates come with the window title they land on, so you can tell where a click is going to hit.
@@ -135,11 +137,11 @@ The intended setup is an agent with a **vision-capable model API**: hand it the 
 3. `python paw.py click X Y` or `python paw.py type "..."`;
 4. repeat.
 
-`shot` and `click` both use physical pixels, so screenshot coordinates work directly. Coordinates estimated from a thumbnail or a chat preview do **not** — run `python paw.py scale` (e.g. at 150% you multiply preview coordinates by 1.5).
+`shot` and `click` both use physical pixels, so screenshot coordinates work directly. Coordinates estimated from a thumbnail or a chat preview do **not** 鈥?run `python paw.py scale` (e.g. at 150% you multiply preview coordinates by 1.5).
 
 ## With an agent (MCP)
 
-`paw_mcp.py` is an MCP server that wraps the commands as tools (`screenshot`, `click`, `type_text`, `focus_window`, …). **If your client speaks MCP, you don't change any paw code.**
+`paw_mcp.py` is an MCP server that wraps the commands as tools (`screenshot`, `click`, `type_text`, `focus_window`, 鈥?. **If your client speaks MCP, you don't change any paw code.**
 
 ```bash
 pip install "mcp[cli]"
@@ -160,7 +162,7 @@ Then add a server entry to your client config (adjust the path):
 }
 ```
 
-**Cursor** (`.cursor/mcp.json`), **Cline**, **Continue**, **Windsurf**: same idea — `command = python`, `args = ["<path>/paw_mcp.py"]`, stdio transport. The field may be called `mcpServers`, `servers` or `mcp` depending on the client.
+**Cursor** (`.cursor/mcp.json`), **Cline**, **Continue**, **Windsurf**: same idea 鈥?`command = python`, `args = ["<path>/paw_mcp.py"]`, stdio transport. The field may be called `mcpServers`, `servers` or `mcp` depending on the client.
 
 Restart the client and you should see 14 tools: `screen_size`, `display_scale`, `screenshot`, `click`, `move`, `drag`, `type_text`, `press_key`, `press_hotkey`, `scroll`, `focus_window`, `list_windows`, `launch`, `wait`.
 
@@ -172,23 +174,24 @@ You can also skip MCP entirely: `SKILL.md` is a plain instruction file for agent
 Focus the target window first: `python paw.py focus "Notepad"`. The first click often only activates the window.
 
 **The click lands off by a few pixels?**
-Run `python paw.py scale`. At 150% scaling, screenshot coordinates are physical pixels — multiply anything measured on a preview by 1.5.
+Run `python paw.py scale`. At 150% scaling, screenshot coordinates are physical pixels 鈥?multiply anything measured on a preview by 1.5.
 
 **A borderless fullscreen game screenshots as black?**
 System-level capture can miss some exclusive-fullscreen surfaces. Switch the game to windowed or borderless-windowed mode.
 
 **Chinese/Japanese text won't type?**
-`type` goes through the clipboard (backup, paste, restore). If another app holds the clipboard, it fails — retrying usually works.
+`type` goes through the clipboard (backup, paste, restore). If another app holds the clipboard, it fails 鈥?retrying usually works.
 
 ## Risks
 
-- It really moves your mouse and types on your keyboard — use it at your own risk.
+- It really moves your mouse and types on your keyboard 鈥?use it at your own risk.
 - Permission levels, dangerous-word filtering and the emergency stop only block some mistakes; they are not a security guarantee.
 
 ## Maintenance
 
-I'm a high-school student, so updates come in bursts — assume "updated irregularly". Bugs, feature ideas and doc fixes are welcome as issues or PRs.
+I'm a high-school student, so updates come in bursts 鈥?assume "updated irregularly". Bugs, feature ideas and doc fixes are welcome as issues or PRs.
 
 ## License
 
 MIT
+

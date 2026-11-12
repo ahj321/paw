@@ -1,5 +1,7 @@
 # paw 🐾
 
+[![CI](https://github.com/ahj321/paw/actions/workflows/ci.yml/badge.svg)](https://github.com/ahj321/paw/actions/workflows/ci.yml)
+
 **进一步提升 AI 的手：看屏幕、点按钮、打字，全是一条命令的事。**
 
 [English](README.en.md) · 中文
