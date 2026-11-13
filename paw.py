@@ -45,10 +45,13 @@ steps.txt 示例：
 """
 
 import argparse
+import base64
 import ctypes
 import json
 import os
 import shlex
+import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -183,7 +186,8 @@ CMD_LEVEL = {
     "launch": "browse", "move": "browse",
     "desks": "browse", "desk": "browse", "screens": "browse", "watch": "browse",
     "focus": "browse", "wait": "browse", "goto": "browse",
-    "uia": "browse", "start": "browse", "stop": "browse", "clean": "browse",
+    "uia": "browse", "start": "browse", "stop": "browse", "clean": "browse", "web": "browse",
+    "web-click": "safe",
     "click": "safe", "dclick": "safe", "rclick": "safe", "scroll": "safe", "drag": "safe",
     "type": "safe", "key": "safe", "hotkey": "safe",
     "uia-click": "safe",
@@ -333,9 +337,255 @@ def _do_uia_click(kw: str, name: str) -> int:
         return 0
 
 
+# ---------- 网页（CDP）：让浏览器报出 DOM 里每个控件的位置 ----------
+
+CDP_PORT = 9222
+
+
+def _cdp_pages(port: int = CDP_PORT):
+    """列出调试端口上可操作的页面。"""
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json", timeout=3) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+    except Exception as exc:
+        raise RuntimeError(
+            f"连不上 {port} 端口的调试接口（{exc.__class__.__name__}）。\n"
+            "浏览器要用调试端口启动，而且必须配一个独立的 --user-data-dir\n"
+            "（默认配置目录从 Chromium 某版起不再允许开调试端口）：\n\n"
+            '  msedge.exe --remote-debugging-port=9222 --user-data-dir="%TEMP%\\paw-edge"\n\n'
+            "打开后在里面登录一次要操作的网站，之后 paw web 就能用了。"
+        )
+    return [p for p in data if p.get("type") == "page"]
+
+
+def _ws_connect(host: str, port: int, path: str, timeout: float = 10.0):
+    s = socket.create_connection((host, port), timeout=timeout)
+    key = base64.b64encode(os.urandom(16)).decode()
+    req = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {host}:{port}\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Key: {key}\r\n"
+        "Sec-WebSocket-Version: 13\r\n\r\n"
+    )
+    s.sendall(req.encode())
+    buf = b""
+    while b"\r\n\r\n" not in buf:
+        chunk = s.recv(4096)
+        if not chunk:
+            raise RuntimeError("握手时连接被关闭")
+        buf += chunk
+    head, _, rest = buf.partition(b"\r\n\r\n")
+    if b"101" not in head.split(b"\r\n")[0]:
+        raise RuntimeError("握手失败：" + head.decode("latin1")[:200])
+    return s, rest
+
+
+def _ws_send(s, text: str) -> None:
+    data = text.encode()
+    header = bytearray([0x81])  # FIN + 文本帧
+    n = len(data)
+    if n < 126:
+        header.append(0x80 | n)
+    elif n < 65536:
+        header.append(0x80 | 126)
+        header += struct.pack(">H", n)
+    else:
+        header.append(0x80 | 127)
+        header += struct.pack(">Q", n)
+    mask = os.urandom(4)
+    header += mask
+    s.sendall(bytes(header) + bytes(b ^ mask[i % 4] for i, b in enumerate(data)))
+
+
+def _recv_exact(s, n: int) -> bytes:
+    buf = b""
+    while len(buf) < n:
+        chunk = s.recv(n - len(buf))
+        if not chunk:
+            raise RuntimeError("连接关闭")
+        buf += chunk
+    return buf
+
+
+def _ws_recv(s, pending: bytes = b"") -> str:
+    buf = pending
+    while True:
+        while len(buf) < 2:
+            buf += _recv_exact(s, 2 - len(buf))
+        b0, b1 = buf[0], buf[1]
+        fin = b0 & 0x80
+        opcode = b0 & 0x0F
+        masked = b1 & 0x80
+        n = b1 & 0x7F
+        pos = 2
+        if n == 126:
+            while len(buf) < pos + 2:
+                buf += _recv_exact(s, pos + 2 - len(buf))
+            n = struct.unpack(">H", buf[pos:pos + 2])[0]
+            pos += 2
+        elif n == 127:
+            while len(buf) < pos + 8:
+                buf += _recv_exact(s, pos + 8 - len(buf))
+            n = struct.unpack(">Q", buf[pos:pos + 8])[0]
+            pos += 8
+        mkey = b""
+        if masked:
+            while len(buf) < pos + 4:
+                buf += _recv_exact(s, pos + 4 - len(buf))
+            mkey = buf[pos:pos + 4]
+            pos += 4
+        while len(buf) < pos + n:
+            buf += _recv_exact(s, pos + n - len(buf))
+        payload = buf[pos:pos + n]
+        buf = buf[pos + n:]
+        if mkey:
+            payload = bytes(b ^ mkey[i % 4] for i, b in enumerate(payload))
+        if opcode == 0x8:
+            raise RuntimeError("服务器关闭了连接")
+        if opcode == 0x9:
+            continue
+        if opcode in (0x1, 0x2):
+            if not fin:
+                continue
+            return payload.decode("utf-8", "replace")
+
+
+def _cdp_call(s, counter, method: str, params=None):
+    counter[0] += 1
+    mid = counter[0]
+    _ws_send(s, json.dumps({"id": mid, "method": method, "params": params or {}}))
+    while True:
+        msg = json.loads(_ws_recv(s))
+        if msg.get("id") == mid:
+            return msg
+
+
+def _pick_page(pages):
+    """优先挑真正的内容页：跳过 edge:// 内部页与浏览器欢迎/致谢页。"""
+    for p in pages:
+        url = (p.get("url") or "").lower()
+        if url.startswith(("edge://", "chrome-extension://", "devtools://")):
+            continue
+        if "welcome." in url or "thankyou" in url:
+            continue
+        return p
+    return pages[0] if pages else None
+
+
+def _web_elements(port: int = CDP_PORT, keyword: str = ""):
+    """连上内容页，拿回可点元素 [(文字, 中心x, 中心y)]。"""
+    pages = _cdp_pages(port)
+    if not pages:
+        raise RuntimeError("没有打开的页面")
+    page = _pick_page(pages)
+    path = page["webSocketDebuggerUrl"].split(str(port), 1)[1]
+    s, pending = _ws_connect("127.0.0.1", port, path)
+    counter = [0]
+    try:
+        js = (
+            "JSON.stringify(([...document.querySelectorAll("
+            "'a,button,[role=button],input[type=submit]')]"
+            ".filter(e=>{const r=e.getBoundingClientRect();"
+            "return r.width>0&&r.height>0&&r.top>=0&&r.left>=0;})"
+            ".map(e=>{const r=e.getBoundingClientRect();"
+            "const t=(e.innerText||e.value||e.getAttribute('aria-label')||'').trim();"
+            "return [t, Math.round(r.x+r.width/2), Math.round(r.y+r.height/2)];})"
+            ".filter(x=>x[0])))"
+        )
+        r = _cdp_call(s, counter, "Runtime.evaluate", {"expression": js, "returnByValue": True})
+        if r.get("result", {}).get("exceptionDetails"):
+            detail = r["result"]["exceptionDetails"].get("text", "JS 执行出错")
+            raise RuntimeError(f"页面脚本出错：{detail}")
+        raw = r.get("result", {}).get("result", {}).get("value") or "[]"
+        items = json.loads(raw)
+        if keyword:
+            kw = keyword.lower()
+            items = [x for x in items if kw in x[0].lower()]
+        return page.get("title", ""), items
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
+
+
+def _do_web(keyword: str = "", port: int = CDP_PORT) -> int:
+    title, items = _web_elements(port, keyword)
+    print(f"页面：{title}")
+    if not items:
+        print("没找到可点元素" + (f"（关键词「{keyword}」）" if keyword else ""))
+        return 0
+    print(f"共 {len(items)} 个：")
+    for text, x, y in items[:40]:
+        print(f"  {text[:34]:36s} ({x}, {y})")
+    return 0
+
+
+def _do_web_click(text: str, port: int = CDP_PORT, real: bool = False) -> int:
+    pages = _cdp_pages(port)
+    if not pages:
+        print("没有打开的页面", file=sys.stderr)
+        return 1
+    page = _pick_page(pages)
+    path = page["webSocketDebuggerUrl"].split(str(port), 1)[1]
+    s, pending = _ws_connect("127.0.0.1", port, path)
+    counter = [0]
+    try:
+        js = (
+            "JSON.stringify(([...document.querySelectorAll("
+            "'a,button,[role=button],input[type=submit]')]"
+            ".filter(e=>{const r=e.getBoundingClientRect();"
+            "return r.width>0&&r.height>0&&r.top>=0&&r.left>=0;})"
+            ".map(e=>{const r=e.getBoundingClientRect();"
+            "const t=(e.innerText||e.value||e.getAttribute('aria-label')||'').trim();"
+            "return [t, Math.round(r.x+r.width/2), Math.round(r.y+r.height/2)];})"
+            ".filter(x=>x[0])))"
+        )
+        r = _cdp_call(s, counter, "Runtime.evaluate", {"expression": js, "returnByValue": True})
+        if r.get("result", {}).get("exceptionDetails"):
+            raise RuntimeError("页面脚本出错：" + r["result"]["exceptionDetails"].get("text", "?"))
+        items = json.loads(r.get("result", {}).get("result", {}).get("value") or "[]")
+        match = [it for it in items if it[0].lower() == text.lower()]
+        if not match:
+            match = [it for it in items if text.lower() in it[0].lower()]
+        if not match:
+            print(f"页面「{page.get('title', '')}」里没有文字含「{text}」的可点元素", file=sys.stderr)
+            return 1
+        label, x, y = match[0]
+        print(f"找到：{label!r} 在页面坐标 ({x}, {y})")
+        if real:
+            _click_at(x, y, "left", False)
+            print("已点击（真实鼠标事件，按页面坐标）")
+        else:
+            _cdp_call(s, counter, "Input.dispatchMouseEvent",
+                      {"type": "mouseMoved", "x": x, "y": y})
+            _cdp_call(s, counter, "Input.dispatchMouseEvent",
+                      {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1})
+            _cdp_call(s, counter, "Input.dispatchMouseEvent",
+                      {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1})
+            print("已点击（通过浏览器调试接口，不需要屏幕坐标）")
+        return 0
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
+
+
 def _plan_text(cmd: str, args: list) -> str:
     if cmd == "size":
         return "读取屏幕分辨率（不改任何东西）"
+    if cmd == "web":
+        kw = " ".join(a for a in args if not a.startswith("--"))
+        return f"列出网页里可点的元素{'（过滤：' + kw + '）' if kw else ''}（不改任何东西）"
+    if cmd == "web-click":
+        kw = " ".join(a for a in args if not a.startswith("--"))
+        how = "真实鼠标事件" if "--real" in args else "浏览器调试接口"
+        return f"在网页里找文字含「{kw}」的元素并点击（{how}）"
     if cmd == "uia":
         return f"列出窗口「{args[0] if args else ''}」里的控件和坐标（不改任何东西）"
     if cmd == "uia-click":
@@ -944,6 +1194,46 @@ def run_one(
             s = _dpi_scale()
             print(f"缩放 {s:.2f}x（{int(s * 100)}%）：物理 {w}x{h}，逻辑 {int(w / s)}x{int(h / s)}")
             print("shot 与 click 都用物理像素；按缩略图/预览图估坐标时，先乘这个比例。")
+
+        elif cmd == "web":
+            port = CDP_PORT
+            words = []
+            i = 0
+            while i < len(args):
+                if args[i] == "--port" and i + 1 < len(args):
+                    port = int(args[i + 1])
+                    i += 2
+                else:
+                    words.append(args[i])
+                    i += 1
+            try:
+                return _do_web(" ".join(words), port)
+            except Exception as exc:
+                print(f"网页读取失败：{exc}", file=sys.stderr)
+                return 1
+
+        elif cmd == "web-click":
+            port = CDP_PORT
+            real = "--real" in args
+            words = []
+            i = 0
+            while i < len(args):
+                if args[i] == "--port" and i + 1 < len(args):
+                    port = int(args[i + 1])
+                    i += 2
+                elif args[i] == "--real":
+                    i += 1
+                else:
+                    words.append(args[i])
+                    i += 1
+            if not words:
+                print("用法：paw.py web-click \"按钮文字\" [--port 9222] [--real]", file=sys.stderr)
+                return 2
+            try:
+                return _do_web_click(" ".join(words), port, real=real)
+            except Exception as exc:
+                print(f"网页点击失败：{exc}", file=sys.stderr)
+                return 1
 
         elif cmd == "uia":
             return _do_uia(args[0] if args else "")
