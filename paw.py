@@ -828,6 +828,34 @@ def _goto_cmd(args: list) -> int:
     return 0
 
 
+def _force_foreground(hwnd) -> bool:
+    """还原窗口并抢到前台。系统拒绝 SetForegroundWindow 时用 AttachThreadInput 强抢。"""
+    u = ctypes.windll.user32
+    u.ShowWindow(hwnd, 9)  # SW_RESTORE：最小化的也能还原
+    time.sleep(0.15)
+    try:
+        u.SetForegroundWindow(hwnd)
+    except Exception:
+        pass
+    u.BringWindowToTop(hwnd)
+    time.sleep(0.15)
+    if u.GetForegroundWindow() == hwnd:
+        return True
+    fg = u.GetForegroundWindow()
+    tid_fg = u.GetWindowThreadProcessId(fg, None) if fg else 0
+    tid_me = u.GetWindowThreadProcessId(hwnd, None)
+    if tid_fg and tid_me:
+        u.AttachThreadInput(tid_me, tid_fg, True)
+        try:
+            u.ShowWindow(hwnd, 9)
+            u.SetForegroundWindow(hwnd)
+            u.BringWindowToTop(hwnd)
+        finally:
+            u.AttachThreadInput(tid_me, tid_fg, False)
+    time.sleep(0.15)
+    return u.GetForegroundWindow() == hwnd
+
+
 def _focus_cmd(args: list) -> int:
     """按标题关键词把窗口切到前台。点击之前先 focus，第一下才不会只落在「激活」上。"""
     try:
@@ -847,6 +875,12 @@ def _focus_cmd(args: list) -> int:
         return 1
 
     w = hits[0]
+    hwnd = getattr(w, "_hWnd", None)
+    if hwnd and _force_foreground(hwnd):
+        print("focused:", w.title)
+        return 0
+
+    # 兜底：pygetwindow 自己的路径
     try:
         if w.isMinimized:
             w.restore()
