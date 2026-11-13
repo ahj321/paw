@@ -10,7 +10,7 @@ agent 已经会读代码、写文档，却还差最后三公里——**真的替
 
 [English](README.en.md) · 中文
 
-![paw 演示](assets/demo.gif)
+![paw 在记事本里打字](docs/type.gif)
 
 模型负责「看」，paw 负责「动」。三档精度，按你要的准头挑：
 

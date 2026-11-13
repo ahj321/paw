@@ -10,7 +10,7 @@ It isn't tied to any single agent: **the command line is the interface**, MCP is
 
 [中文](README.md) · English
 
-![paw demo](assets/demo.gif)
+![paw typing into Notepad](docs/type.gif)
 
 The model does the looking, paw does the moving. Three levels of precision — pick the one that matches how exact you need to be:
 
