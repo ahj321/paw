@@ -378,4 +378,4 @@ MIT
 
 ---
 
-版本 **v2.2**，更新记录见 [CHANGELOG.md](CHANGELOG.md)。
+版本 **v2.2**，更新记录见 [CHANGELOG.md](CHANGELOG.md)，踩过的坑见 [docs/PITFALLS.md](docs/PITFALLS.md)。

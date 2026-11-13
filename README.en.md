@@ -341,4 +341,4 @@ MIT
 
 ---
 
-Version **v2.2** — see [CHANGELOG.md](CHANGELOG.md).
+Version **v2.2** — see [CHANGELOG.md](CHANGELOG.md) and the pitfalls we hit in [docs/PITFALLS.md](docs/PITFALLS.md).
