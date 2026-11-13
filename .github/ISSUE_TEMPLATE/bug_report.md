@@ -8,7 +8,7 @@ labels: bug
 **哪条命令**
 
 ```bash
-python pc.py ...
+paw ...
 ```
 
 **期望发生什么**
@@ -21,5 +21,5 @@ python pc.py ...
 
 - Windows 版本：
 - Python 版本：
-- `python pc.py size` 的输出：
-- `python pc.py scale` 的输出：
+- `paw size` 的输出：
+- `paw scale` 的输出：

@@ -60,7 +60,9 @@ Windows / macOS / Linux（X11）可用。Windows 上输入中文走剪贴板。
 ```bash
 python paw.py size                        # 屏幕分辨率
 python paw.py scale                       # 显示缩放比例（物理 / 逻辑像素换算）
-python paw.py shot screen.png             # 截屏
+python paw.py shot                        # 截屏 → %TEMP%\paw\（自动保留最近 50 张）
+python paw.py shot screen.png             # 截屏 → 你指定的位置（paw 不删）
+python paw.py clean                       # 立刻清一次临时截图
 python paw.py click 960 540               # 左键单击
 python paw.py dclick 960 540              # 双击
 python paw.py rclick 960 540              # 右键
@@ -87,6 +89,17 @@ python paw.py uia-click "记事本" "确定"     # 按控件名点击（不用�
 python paw.py start                       # 启动常驻服务（之后每条命令 ~9ms）
 python paw.py stop                        # 关掉常驻服务
 ```
+
+## 截图存在哪
+
+`shot` 有两条路，分得很清楚：
+
+| 你怎么写 | 存哪 | 谁清 |
+|---|---|---|
+| `paw shot` | `%TEMP%\paw\shot-日期-时间.png` | **paw 自动**，超过 50 张删最旧的 |
+| `paw shot D:/a.png` | 你写的位置 | 你自己 |
+
+想要别的保留数量：`paw clean 20` 只留最近 20 张。
 
 ## 按控件点击（uia）
 

@@ -61,7 +61,8 @@ Windows, macOS and Linux (X11) all work; on Windows, non-ASCII typing goes throu
 ```bash
 python paw.py size                        # screen size
 python paw.py scale                       # display scale (physical / logical pixels)
-python paw.py shot out.png                # screenshot
+python paw.py shot                        # screenshot → %TEMP%\paw\ (keeps last 50)
+python paw.py shot out.png                # screenshot → your path (paw never deletes it)
 python paw.py shot out.png --crop 0,0,800,600 --jpg
 python paw.py click 960 540               # left click
 python paw.py dclick 960 540              # double click
@@ -80,7 +81,19 @@ python paw.py uia "Notepad"               # list controls and their exact rectan
 python paw.py uia-click "Notepad" "OK"    # click a control by name (no coordinates)
 python paw.py start                       # start the resident service (~9 ms per command)
 python paw.py stop                        # shut the resident service down
+python paw.py clean                       # trim the temp screenshot folder now
 ```
+
+## Where screenshots go
+
+`shot` has two modes, kept strictly apart:
+
+| How you call it | Where it lands | Who cleans up |
+|---|---|---|
+| `paw shot` | `%TEMP%\paw\shot-date-time.png` | **paw**, keeping the newest 50 |
+| `paw shot D:/a.png` | the path you gave | you |
+
+Want a different retention: `paw clean 20` keeps the newest 20.
 
 Every command prints what it is about to do before doing it, and `--pause <seconds>` sets the delay between actions (default 0.15).
 
