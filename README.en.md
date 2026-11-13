@@ -20,7 +20,7 @@ The model does the looking, paw does the moving. Three levels of precision — p
 | Controls | `uia` / `uia-click` | Windows reports the control's rectangle, pixel exact | desktop apps, scaled displays, covered windows |
 | Web | `web` / `web-click` | the browser reports element positions, no screenshot | buttons and forms inside a browser |
 
-- **Only two dependencies**: `pip install pyautogui pillow` — no server, no account, no API key;
+- **Only one dependency**: `pip install pillow` — no server, no account, no API key;
 - **Runs entirely local, no network**: the tool itself never goes online; only the model call needs the network;
 - **One config block to plug into an agent**: ships an MCP server — paste it into Claude Desktop, Cursor, Cline or Continue;
 - **Nothing hidden**: every command prints its plan first, including which window the coordinates land in.
@@ -29,14 +29,14 @@ The model does the looking, paw does the moving. Three levels of precision — p
 
 ## Why
 
-Agents can already read code and write docs, but the last mile —actually clicking that button for you —usually costs a framework, an environment setup and an API key. paw compresses it into one command: **no extra key, no framework**, just `pip install pyautogui pillow` and it moves.
+Agents can already read code and write docs, but the last mile —actually clicking that button for you —usually costs a framework, an environment setup and an API key. paw compresses it into one command: **no extra key, no framework**, just `pip install pillow` and it moves.
 
 It does one thing: it splits "look at the screen" and "act on the screen" into two commands and lets the model chain them itself. It works offline; with a cloud model, only the model call needs the network.
 
 ## Quick start
 
 ```bash
-pip install pyautogui pillow
+pip install pillow
 python paw.py size          # prints screen size; if you see numbers, it works
 python paw.py shot s.png    # take a screenshot
 python paw.py scale         # prints the display scale (e.g. 1.50x on 150%)
@@ -88,9 +88,8 @@ You can also skip MCP entirely: `SKILL.md` is a plain instruction file for agent
 ## Install
 
 ```bash
-pip install pyautogui pillow
-pip install pygetwindow    # optional: list windows
-pip install pywinauto      # optional: virtual desktops
+pip install pillow
+pip install pyvda          # optional: desks / screens
 ```
 
 Windows, macOS and Linux (X11) all work; on Windows, non-ASCII typing goes through the clipboard.

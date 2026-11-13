@@ -47,6 +47,7 @@ steps.txt 示例：
 import argparse
 import base64
 import ctypes
+import ctypes.wintypes
 import json
 import os
 import shlex
@@ -75,42 +76,8 @@ try:
 except Exception:
     pass
 
-# pyautogui 的导入很贵（约 0.4 秒）。size / shot / windows 这些不需要它的命令
-# 就靠下面的懒加载跳过导入，只付解释器启动的钱。
+# 动作之间的默认停顿，--pause 可改（更小更快，更大多留反应时间）。
 _PG_CONF = {"pause": 0.15}
-
-
-def _import_pyautogui():
-    import pyautogui as pg
-
-    pg.FAILSAFE = False
-    pg.PAUSE = _PG_CONF["pause"]
-    return pg
-
-
-class _LazyPyAutoGUI:
-    """第一次访问属性时才真正导入 pyautogui；PAUSE 赋值只记下来，等导入时生效。"""
-
-    _module = None
-
-    def _load(self):
-        if _LazyPyAutoGUI._module is None:
-            _LazyPyAutoGUI._module = _import_pyautogui()
-        return _LazyPyAutoGUI._module
-
-    def __getattr__(self, name):
-        return getattr(self._load(), name)
-
-    def __setattr__(self, name, value):
-        if name == "PAUSE":
-            _PG_CONF["pause"] = value
-            if _LazyPyAutoGUI._module is not None:
-                setattr(_LazyPyAutoGUI._module, name, value)
-            return
-        setattr(self._load(), name, value)
-
-
-pyautogui = _LazyPyAutoGUI()
 
 
 SHOT_KEEP = 50  # 临时截图保留张数
@@ -153,15 +120,9 @@ def _clean_shots(keep: int = SHOT_KEEP) -> int:
 
 
 def _screen_size():
-
-    """屏幕物理像素尺寸。Windows 下用系统 API，避免为了两个数字导入 pyautogui。"""
-    if sys.platform.startswith("win"):
-        try:
-            u = ctypes.windll.user32
-            return (u.GetSystemMetrics(0), u.GetSystemMetrics(1))
-        except Exception:
-            pass
-    return pyautogui.size()
+    """屏幕物理像素尺寸（Windows 系统 API，不导入第三方库）。"""
+    u = ctypes.windll.user32
+    return (u.GetSystemMetrics(0), u.GetSystemMetrics(1))
 
 
 def _dpi_scale() -> float:
@@ -176,9 +137,79 @@ def _dpi_scale() -> float:
     except Exception:
         return 1.0
 
+def _grab_screen():
+    """抓整屏，返回 Pillow 图像。走 GDI，Pillow 只负责裁剪和编码。"""
+    from PIL import Image
+
+    u = ctypes.windll.user32
+    g = ctypes.windll.gdi32
+
+    u.GetDC.restype = ctypes.c_void_p
+    u.GetDC.argtypes = [ctypes.c_void_p]
+    u.ReleaseDC.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    g.CreateCompatibleDC.restype = ctypes.c_void_p
+    g.CreateCompatibleDC.argtypes = [ctypes.c_void_p]
+    g.CreateCompatibleBitmap.restype = ctypes.c_void_p
+    g.CreateCompatibleBitmap.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+    g.SelectObject.restype = ctypes.c_void_p
+    g.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    g.BitBlt.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                         ctypes.c_int, ctypes.c_void_p, ctypes.c_int, ctypes.c_int,
+                         ctypes.c_uint]
+    g.DeleteObject.argtypes = [ctypes.c_void_p]
+    g.DeleteDC.argtypes = [ctypes.c_void_p]
+
+    w, h = _screen_size()
+    hdc = u.GetDC(0)
+    if not hdc:
+        raise OSError("取不到屏幕 DC")
+    dc = bmp = None
+    try:
+        dc = g.CreateCompatibleDC(hdc)
+        bmp = g.CreateCompatibleBitmap(hdc, w, h)
+        if not dc or not bmp:
+            raise OSError("创建兼容位图失败")
+        g.SelectObject(dc, bmp)
+        if not g.BitBlt(dc, 0, 0, w, h, hdc, 0, 0, 0x00CC0020):
+            raise OSError("抓屏失败（BitBlt 被拒）")
+
+        class _BMIH(ctypes.Structure):
+            _fields_ = [("biSize", ctypes.c_uint32), ("biWidth", ctypes.c_int32),
+                        ("biHeight", ctypes.c_int32), ("biPlanes", ctypes.c_uint16),
+                        ("biBitCount", ctypes.c_uint16), ("biCompression", ctypes.c_uint32),
+                        ("biSizeImage", ctypes.c_uint32),
+                        ("biXPelsPerMeter", ctypes.c_int32),
+                        ("biYPelsPerMeter", ctypes.c_int32),
+                        ("biClrUsed", ctypes.c_uint32),
+                        ("biClrImportant", ctypes.c_uint32)]
+
+        class _BMI(ctypes.Structure):
+            _fields_ = [("bmiHeader", _BMIH), ("bmiColors", ctypes.c_uint32 * 3)]
+
+        bmi = _BMI()
+        bmi.bmiHeader.biSize = ctypes.sizeof(_BMIH)
+        bmi.bmiHeader.biWidth = w
+        bmi.bmiHeader.biHeight = -h  # 负高度 = 从上往下存
+        bmi.bmiHeader.biPlanes = 1
+        bmi.bmiHeader.biBitCount = 32
+        bmi.bmiHeader.biCompression = 0  # BI_RGB
+        buf = ctypes.create_string_buffer(w * h * 4)
+        g.GetDIBits.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint,
+                                ctypes.c_uint, ctypes.c_void_p,
+                                ctypes.POINTER(_BMI), ctypes.c_uint]
+        if not g.GetDIBits(dc, bmp, 0, h, buf, ctypes.byref(bmi), 0):
+            raise OSError("读取像素失败（GetDIBits）")
+        return Image.frombuffer("RGB", (w, h), buf.raw, "raw", "BGRX", 0, 1)
+    finally:
+        if bmp:
+            g.DeleteObject(bmp)
+        if dc:
+            g.DeleteDC(dc)
+        u.ReleaseDC(0, hdc)
+
+
 # 急停：命令行下靠鼠标左右键同按；Web 看板点「急停」时会置上这个标记。
 STOP_FLAG = threading.Event()
-
 LEVEL_ORDER = {"browse": 0, "safe": 1, "full": 2}
 CMD_LEVEL = {
     "size": "browse", "shot": "browse", "windows": "browse", "find": "browse",
@@ -721,15 +752,7 @@ def _win_input() -> bool:
 
 
 def _click_at(x: int, y: int, button: str = "left", double: bool = False) -> None:
-    """点一下。Windows 下直接走系统 API，不导入 pyautogui（省 0.4 秒）。"""
-    if not _win_input():
-        if button == "right":
-            pyautogui.rightClick(x, y)
-        elif double:
-            pyautogui.doubleClick(x, y)
-        else:
-            pyautogui.click(x, y)
-        return
+    """点一下。直接走系统 API（SetCursorPos + mouse_event），不依赖任何第三方库。"""
     u = ctypes.windll.user32
     u.SetCursorPos(int(x), int(y))
     time.sleep(0.02)
@@ -742,70 +765,203 @@ def _click_at(x: int, y: int, button: str = "left", double: bool = False) -> Non
 
 
 def _move_to(x: int, y: int) -> None:
-    """只移动光标。Windows 下直接用 SetCursorPos。"""
-    if _win_input():
-        ctypes.windll.user32.SetCursorPos(int(x), int(y))
-    else:
-        pyautogui.moveTo(x, y, duration=0.15)
+    """只移动光标，用 SetCursorPos。"""
+    ctypes.windll.user32.SetCursorPos(int(x), int(y))
 
 
 def _scroll_at(n: int) -> None:
-    """滚轮 n 格（正数向上）。Windows 下用 mouse_event 的 WHEEL。"""
-    if not _win_input():
-        pyautogui.scroll(n)
-        return
+    """滚轮 n 格（正数向上），用 mouse_event 的 WHEEL。"""
     ctypes.windll.user32.mouse_event(0x0800, 0, 0, int(n) * 120, 0)
 
 
-def _paste_ctrl_v() -> None:
-    """发一次 Ctrl+V。Windows 下用 keybd_event，避免导入 pyautogui。"""
-    if not _win_input():
-        pyautogui.hotkey("ctrl", "v")
-        return
+# ---- Win32 输入层：SendInput / keybd_event，不依赖 pyautogui ----
+
+
+class _MOUSEINPUT(ctypes.Structure):
+    _fields_ = [
+        ("dx", ctypes.c_long),
+        ("dy", ctypes.c_long),
+        ("mouseData", ctypes.c_ulong),
+        ("dwFlags", ctypes.c_ulong),
+        ("time", ctypes.c_ulong),
+        ("dwExtraInfo", ctypes.c_void_p),
+    ]
+
+
+class _KEYBDINPUT(ctypes.Structure):
+    _fields_ = [
+        ("wVk", ctypes.c_ushort),
+        ("wScan", ctypes.c_ushort),
+        ("dwFlags", ctypes.c_ulong),
+        ("time", ctypes.c_ulong),
+        ("dwExtraInfo", ctypes.c_void_p),
+    ]
+
+
+class _HARDWAREINPUT(ctypes.Structure):
+    _fields_ = [
+        ("uMsg", ctypes.c_ulong),
+        ("wParamL", ctypes.c_ushort),
+        ("wParamH", ctypes.c_ushort),
+    ]
+
+
+class _INPUTUNION(ctypes.Union):
+    _fields_ = [("mi", _MOUSEINPUT), ("ki", _KEYBDINPUT), ("hi", _HARDWAREINPUT)]
+
+
+class _INPUT(ctypes.Structure):
+    _fields_ = [("type", ctypes.c_ulong), ("u", _INPUTUNION)]
+
+
+_INPUT_KEYBOARD = 1
+_KEYEVENTF_KEYUP = 0x0002
+_KEYEVENTF_UNICODE = 0x0004
+
+_VK_NAMES = {
+    "enter": 0x0D, "return": 0x0D, "tab": 0x09, "esc": 0x1B, "escape": 0x1B,
+    "space": 0x20, "backspace": 0x08, "delete": 0x2E, "del": 0x2E,
+    "insert": 0x2D, "home": 0x24, "end": 0x23,
+    "pageup": 0x21, "pagedown": 0x22,
+    "up": 0x26, "down": 0x28, "left": 0x25, "right": 0x27,
+    "ctrl": 0x11, "control": 0x11, "alt": 0x12, "shift": 0x10,
+    "win": 0x5B, "cmd": 0x5B, "capslock": 0x14, "printscreen": 0x2C,
+}
+for _i in range(1, 13):
+    _VK_NAMES[f"f{_i}"] = 0x6F + _i
+
+
+def _send_unicode(code: int) -> None:
+    """发一个 UTF-16 码元。KEYEVENTF_UNICODE 不经过键盘布局，任何字符都能进。"""
     u = ctypes.windll.user32
-    u.keybd_event(0x11, 0, 0, 0)      # Ctrl 按下
-    u.keybd_event(0x56, 0, 0, 0)      # V 按下
-    u.keybd_event(0x56, 0, 0x0002, 0)  # V 抬起
-    u.keybd_event(0x11, 0, 0x0002, 0)  # Ctrl 抬起
+    for flags in (0, _KEYEVENTF_KEYUP):
+        inp = _INPUT(type=_INPUT_KEYBOARD)
+        inp.u.ki = _KEYBDINPUT(
+            wVk=0, wScan=code,
+            dwFlags=_KEYEVENTF_UNICODE | flags,
+            time=0, dwExtraInfo=None,
+        )
+        u.SendInput(1, ctypes.byref(inp), ctypes.sizeof(_INPUT))
+
+
+def _send_text(text: str) -> None:
+    """逐字符发文字：不碰剪贴板，中文、emoji 都能直接打进去。"""
+    for ch in text:
+        if ch == "\n":
+            _press("enter")
+        elif ch == "\t":
+            _press("tab")
+        else:
+            code = ord(ch)
+            if code > 0xFFFF:  # 超出 BMP：拆代理对
+                code -= 0x10000
+                _send_unicode(0xD800 + (code >> 10))
+                _send_unicode(0xDC00 + (code & 0x3FF))
+            else:
+                _send_unicode(code)
+
+
+def _vk_of(name: str) -> int:
+    key = name.strip().lower()
+    if key in _VK_NAMES:
+        return _VK_NAMES[key]
+    if len(key) == 1:
+        return ord(key.upper())
+    raise ValueError(f"不认识的键：{name}")
+
+
+def _key_down(vk: int) -> None:
+    ctypes.windll.user32.keybd_event(vk, 0, 0, 0)
+
+
+def _key_up(vk: int) -> None:
+    ctypes.windll.user32.keybd_event(vk, 0, _KEYEVENTF_KEYUP, 0)
+
+
+def _press(name: str) -> None:
+    vk = _vk_of(name)
+    _key_down(vk)
+    _key_up(vk)
+
+
+def _hotkey(*names: str) -> None:
+    vks = [_vk_of(n) for n in names]
+    for vk in vks:
+        _key_down(vk)
+    for vk in reversed(vks):
+        _key_up(vk)
+
+
+def _paste_ctrl_v() -> None:
+    """发一次 Ctrl+V（保留给需要粘贴的场景）。"""
+    _hotkey("ctrl", "v")
 
 
 def _type_text(text: str) -> None:
-    # 统一走剪贴板 + Ctrl+V：比逐字符敲快，也不用为了输入去导入 pyautogui。
-    try:
-        import pyperclip
-    except ImportError:
-        pyperclip = None
+    """输入文字。走 SendInput，不占剪贴板、不用逐键映射，中文和 emoji 都能打。"""
+    _send_text(text)
 
-    if pyperclip:
-        try:
-            old = pyperclip.paste()
-        except Exception:
-            old = ""
-        pyperclip.copy(text)
-    else:
-        old = _clipboard_get()
-        _clipboard_set(text)
 
-    time.sleep(0.08)
-    _paste_ctrl_v()
-    time.sleep(0.1)
+def _cursor_pos() -> tuple:
+    """当前鼠标位置（物理像素）。"""
+    pt = ctypes.wintypes.POINT()
+    ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+    return pt.x, pt.y
 
-    try:
-        if pyperclip:
-            pyperclip.copy(old)
-        else:
-            _clipboard_set(old)
-    except Exception:
-        pass
+
+def _drag_to(x1: int, y1: int, x2: int, y2: int, dur: float = 0.4) -> None:
+    """按住左键从 (x1,y1) 拖到 (x2,y2)。"""
+    u = ctypes.windll.user32
+    u.SetCursorPos(int(x1), int(y1))
+    time.sleep(0.05)
+    u.mouse_event(0x0002, 0, 0, 0, 0)  # 左键按下
+    steps = max(8, int(dur * 60))
+    for i in range(1, steps + 1):
+        nx = int(x1 + (x2 - x1) * i / steps)
+        ny = int(y1 + (y2 - y1) * i / steps)
+        u.SetCursorPos(nx, ny)
+        time.sleep(dur / steps)
+    u.mouse_event(0x0004, 0, 0, 0, 0)  # 左键抬起
+
+
+_WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+
+def _enum_top_windows(include_minimized: bool = False) -> list:
+    """枚举顶层窗口：[(hwnd, title, (l, t, r, b)), ...]，按 z 序（前台在前）。"""
+    u = ctypes.windll.user32
+    out = []
+
+    def _cb(hwnd, _lparam):
+        if not u.IsWindowVisible(hwnd):
+            return True
+        length = u.GetWindowTextLengthW(hwnd)
+        if length == 0:
+            return True
+        buf = ctypes.create_unicode_buffer(length + 1)
+        u.GetWindowTextW(hwnd, buf, length + 1)
+        minimized = bool(u.IsIconic(hwnd))
+        if minimized and not include_minimized:
+            return True
+        rect = ctypes.wintypes.RECT()
+        u.GetWindowRect(hwnd, ctypes.byref(rect))
+        box = (0, 0, 0, 0) if minimized else (rect.left, rect.top, rect.right, rect.bottom)
+        out.append((hwnd, buf.value, box))
+        return True
+
+    u.EnumWindows(_WNDENUMPROC(_cb), 0)
+    return out
+
+
+def _window_size(hwnd) -> tuple:
+    rect = ctypes.wintypes.RECT()
+    ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    return rect.right - rect.left, rect.bottom - rect.top
 
 
 def _list_windows() -> None:
-    import pygetwindow as gw
-
-    for w in gw.getAllWindows():
-        title = (w.title or "").strip()
-        if title:
-            print(f"{w.left:>6} {w.top:>6} {w.width:>6} {w.height:>6}  {title}")
+    for hwnd, title, (l, t, r, b) in _enum_top_windows():
+        print(f"{l:>6} {t:>6} {r - l:>6} {b - t:>6}  {title}")
 
 
 def _goto_cmd(args: list) -> int:
@@ -818,11 +974,11 @@ def _goto_cmd(args: list) -> int:
         print("用法：paw.py goto <url>", file=sys.stderr)
         return 2
     url = args[0]
-    pyautogui.hotkey("ctrl", "l")
+    _hotkey("ctrl", "l")
     time.sleep(0.25)
-    pyautogui.typewrite(url, interval=0.01)
+    _type_text(url)
     time.sleep(0.6)
-    pyautogui.press("enter")
+    _press("enter")
     time.sleep(0.3)
     print("goto", url)
     return 0
@@ -857,40 +1013,26 @@ def _force_foreground(hwnd) -> bool:
 
 
 def _focus_cmd(args: list) -> int:
-    """按标题关键词把窗口切到前台。点击之前先 focus，第一下才不会只落在「激活」上。"""
-    try:
-        import pygetwindow as gw
-    except ImportError:
-        print("需要 pygetwindow：pip install pygetwindow", file=sys.stderr)
-        return 1
+    """按标题关键词把窗口切到前台。点击之前先 focus，第一下才不会只落在「激活」上。
 
+    最小化的窗口也能拉起来：先 ShowWindow(SW_RESTORE) 再抢前台。
+    """
     if not args:
         print("用法：paw.py focus <标题关键词>", file=sys.stderr)
         return 2
 
     key = " ".join(args).lower()
-    hits = [w for w in gw.getAllWindows() if key in (w.title or "").lower() and (w.title or "").strip()]
+    hits = [(h, t) for h, t, _ in _enum_top_windows(include_minimized=True) if key in t.lower()]
     if not hits:
         print(f"没找到标题含「{key}」的窗口", file=sys.stderr)
         return 1
 
-    w = hits[0]
-    hwnd = getattr(w, "_hWnd", None)
-    if hwnd and _force_foreground(hwnd):
-        print("focused:", w.title)
+    hwnd, title = hits[0]
+    if _force_foreground(hwnd):
+        print("focused:", title)
         return 0
-
-    # 兜底：pygetwindow 自己的路径
-    try:
-        if w.isMinimized:
-            w.restore()
-        w.activate()
-        time.sleep(0.4)
-        print("focused:", w.title)
-        return 0
-    except Exception as e:
-        print(f"激活失败：{e}", file=sys.stderr)
-        return 1
+    print("激活失败：系统拒绝切前台（试试先点一下别的窗口）", file=sys.stderr)
+    return 1
 
 
 def _idle_seconds() -> float:
@@ -909,36 +1051,39 @@ def _idle_seconds() -> float:
         return -1.0
 
 
+def _foreground_info() -> tuple:
+    """前台窗口的 (标题, 宽, 高)；没有就返回 ("(无)", 0, 0)。"""
+    u = ctypes.windll.user32
+    hwnd = u.GetForegroundWindow()
+    if not hwnd:
+        return "(无)", 0, 0
+    length = u.GetWindowTextLengthW(hwnd)
+    buf = ctypes.create_unicode_buffer(length + 1)
+    u.GetWindowTextW(hwnd, buf, length + 1)
+    w, h = _window_size(hwnd)
+    return (buf.value.strip() or "(无标题)"), w, h
+
+
 def _watch_cmd(args: list) -> int:
     """实时说明「现在在干什么」：前台窗口、标题变化、鼠标位置、空闲时间。"""
-    try:
-        import pygetwindow as gw
-    except ImportError:
-        print("需要 pygetwindow：pip install pygetwindow", file=sys.stderr)
-        return 1
-
     interval = float(args[0]) if args else 2.0
     prev = {}
     print(f"每 {interval}s 刷新一次，Ctrl+C 退出", file=sys.stderr)
     try:
         while True:
             now = time.strftime("%H:%M:%S")
-            fg = gw.getActiveWindow()
-            fg_title = (fg.title or "").strip() if fg else "(无)"
-            fg_size = f"{fg.width}x{fg.height}" if fg else "-"
-            pos = pyautogui.position()
+            fg_title, fg_w, fg_h = _foreground_info()
+            msg = self = None
+            pos = _cursor_pos()
             idle = _idle_seconds()
             idle_txt = f"{idle}s" if idle >= 0 else "?"
             print(
-                f"[{now}] 前台：{fg_title}  [{fg_size}]  ｜ 鼠标 ({pos.x},{pos.y}) ｜ 空闲 {idle_txt}",
+                f"[{now}] 前台：{fg_title}  [{fg_w}x{fg_h}]"
+                f"  ｜ 鼠标 ({pos[0]},{pos[1]}) ｜ 空闲 {idle_txt}",
                 flush=True,
             )
 
-            cur = {}
-            for w in gw.getAllWindows():
-                t = (w.title or "").strip()
-                if t and w.width > 0:
-                    cur[w._hWnd] = t
+            cur = {h: t for h, t, _ in _enum_top_windows()}
             for hwnd, t in cur.items():
                 if hwnd in prev and prev[hwnd] != t:
                     print(f"           ↳ 窗口变化：{prev[hwnd]!r} → {t!r}", flush=True)
@@ -956,11 +1101,6 @@ def _watch_cmd(args: list) -> int:
 def _screens_cmd(args: list) -> int:
     """用文字说清楚每个虚拟桌面上正开着什么（谁在前台）。"""
     try:
-        import pygetwindow as gw
-    except ImportError:
-        print("需要 pygetwindow：pip install pygetwindow", file=sys.stderr)
-        return 1
-    try:
         from pyvda import VirtualDesktop
     except ImportError:
         print("需要 pyvda：pip install pyvda", file=sys.stderr)
@@ -971,17 +1111,14 @@ def _screens_cmd(args: list) -> int:
     except Exception:
         cur = -1
 
-    fg = gw.getActiveWindow()
+    fg_hwnd = ctypes.windll.user32.GetForegroundWindow()
     groups = {}
-    for w in gw.getAllWindows():
-        title = (w.title or "").strip()
-        if not title or w.width <= 0 or w.height <= 0:
-            continue
+    for hwnd, title, (l, t, r, b) in _enum_top_windows():
         try:
-            desk = VirtualDesktop.get_desktop_of_window(w._hWnd).number
+            desk = VirtualDesktop.get_desktop_of_window(hwnd).number
         except Exception:
             desk = cur  # 查不到归属时，按当前桌面算
-        groups.setdefault(desk, []).append(w)
+        groups.setdefault(desk, []).append((hwnd, title, r - l, b - t))
 
     if not groups:
         print("没有可见窗口")
@@ -995,9 +1132,9 @@ def _screens_cmd(args: list) -> int:
         else:
             head = f"桌面 {desk}"
         print(head)
-        for w in groups[desk]:
-            mark = "  ← 前台" if fg is not None and w._hWnd == fg._hWnd else ""
-            print(f"  - {w.title}  [{w.width}x{w.height}]{mark}")
+        for hwnd, title, w, h in groups[desk]:
+            mark = "  ← 前台" if hwnd == fg_hwnd else ""
+            print(f"  - {title}  [{w}x{h}]{mark}")
     return 0
 
 
@@ -1302,12 +1439,7 @@ def run_one(
                     out = rest[i]
                     i += 1
             out = out or _default_shot_path()
-            try:
-                from PIL import ImageGrab
-
-                img = ImageGrab.grab()  # 比 pyautogui.screenshot() 少导入一层
-            except Exception:
-                img = pyautogui.screenshot()
+            img = _grab_screen()
             if crop:
                 img = img.crop(crop)
             if jpg:
@@ -1321,9 +1453,7 @@ def run_one(
         elif cmd == "drag":
             x1, y1, x2, y2 = (int(v) for v in args[:4])
             dur = float(args[4]) if len(args) > 4 else 0.4
-            pyautogui.moveTo(x1, y1)
-            time.sleep(0.05)
-            pyautogui.dragTo(x2, y2, duration=dur, button="left")
+            _drag_to(x1, y1, x2, y2, dur)
             print("dragged", (x1, y1), "->", (x2, y2))
 
         elif cmd == "launch":
@@ -1362,11 +1492,11 @@ def run_one(
             print("typed")
 
         elif cmd == "key":
-            pyautogui.press(args[0])
+            _press(args[0])
             print("key", args[0])
 
         elif cmd == "hotkey":
-            pyautogui.hotkey(*args)
+            _hotkey(*args)
             print("hotkey", " ".join(args))
 
         elif cmd == "scroll":
@@ -1374,9 +1504,7 @@ def run_one(
             print("scrolled", args[0])
 
         elif cmd == "find":
-            conf = float(args[1]) if len(args) > 1 else 0.85
-            loc = pyautogui.locateOnScreen(args[0], confidence=conf)
-            print(loc if loc else "not found")
+            print("find 需要图像识别库，已不再内置；要按图找，用 uia（控件）或 web（网页）")
 
         elif cmd == "windows":
             _list_windows()
@@ -1465,7 +1593,7 @@ def main() -> int:
     if a.delay:
         time.sleep(a.delay)
     if a.pause >= 0:
-        pyautogui.PAUSE = a.pause
+        _PG_CONF["pause"] = a.pause
 
     try:
         if a.cmd == "run":

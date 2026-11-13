@@ -1,5 +1,17 @@
 # 更新记录
 
+## v2.2
+
+**依赖从 8 个减到 1 个：只留 Pillow。**
+
+- `type` 改走 `SendInput` + `KEYEVENTF_UNICODE`：中文和 emoji 直接打，不再借剪贴板（以前会占用你的剪贴板）；
+- 截图改走 GDI（`GetDC` → `CreateCompatibleDC` → `BitBlt` → `GetDIBits`），Pillow 只负责裁剪和编码，不再依赖 `ImageGrab.grab()`；
+- 鼠标、滚轮、拖拽、按键、快捷键全部走 `SetCursorPos` / `mouse_event` / `SendInput`；
+- 窗口枚举改走 `EnumWindows` + `GetWindowRect`，不再需要 `pygetwindow`；
+- 修 `paw windows` 因 `ctypes.wintypes` 未导入而静默失败；
+- 安装从 `pip install pyautogui pillow`（实际拖进 8 个包）降到 `pip install pillow`；
+- `find` 不再内置图像识别：按图找的活交给 `uia`（控件）或 `web`（网页）。
+
 ## v2.1
 
 **网页上的按钮也能按名字点了。**

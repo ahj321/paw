@@ -20,7 +20,7 @@ agent 已经会读代码、写文档，却还差最后三公里——**真的替
 | 控件 | `uia` / `uia-click` | 问 Windows 要控件矩形，精确到像素 | 桌面软件、缩放屏、窗口被挡 |
 | 网页 | `web` / `web-click` | 问浏览器要元素位置，不用截图 | 浏览器里点按钮、填表 |
 
-- **依赖只有两条**：`pip install pyautogui pillow`——没有服务、没有账号、不用申请 key；
+- **依赖只有一条**：`pip install pillow`——没有服务、没有账号、不用申请 key；
 - **本体本地无需联网**：工具本身完全不联网，只有调模型那一步才需要网；
 - **接 agent 只要一段配置**：自带 MCP server，Claude Desktop / Cursor / Cline / Continue 粘上就接好；
 - **看得见**：执行前打印行动表，坐标落在哪个窗口、点在什么按钮上，说得清清楚楚。
@@ -29,14 +29,14 @@ agent 已经会读代码、写文档，却还差最后三公里——**真的替
 
 ## 为什么写
 
-agent 已经会读代码、写文档，却还差最后三公里：真的替你把那个按钮点下去。这一段通常要装框架、配环境、申请 key——paw 把它压成一条命令：**不额外配 key、不装框架**，`pip install pyautogui pillow` 之后就能动手。
+agent 已经会读代码、写文档，却还差最后三公里：真的替你把那个按钮点下去。这一段通常要装框架、配环境、申请 key——paw 把它压成一条命令：**不额外配 key、不装框架**，`pip install pillow` 之后就能动手。
 
 它只做一件事：把「看屏幕」和「动手」拆成两条命令，让模型自己把它们串起来。工具本身离线可用；用云端模型时，只有调用模型这一步需要联网。
 
 ## 快速开始
 
 ```bash
-pip install pyautogui pillow
+pip install pillow
 python paw.py size          # 打印屏幕分辨率，能看到数字就说明装好了
 python paw.py shot s.png    # 截一张屏
 ```
@@ -104,9 +104,8 @@ pip install "mcp[cli]"
 ## 安装
 
 ```bash
-pip install pyautogui pillow
-pip install pygetwindow   # 可选：列窗口
-pip install pyvda         # 可选：虚拟桌面
+pip install pillow
+pip install pyvda         # 可选：虚拟桌面（desks / screens）
 ```
 
 Windows / macOS / Linux（X11）可用。Windows 上输入中文走剪贴板。
@@ -301,7 +300,7 @@ python paw.py type "确认付款" --level full   # 放行
 | `paw start` 之后用 `paw click 960 540` | **~9 ms**（服务内 24 ms 含动作本身） |
 | `paw.bat`（第一次自动起服务） | 首次 ~800 ms，之后 **~0 ms** |
 
-`click` / `dclick` / `rclick` / `move` / `scroll` / `type` 走系统 API，不加载 pyautogui；只有 `find`、`watch` 这类确实需要它的命令才付约 0.4 秒的导入成本。
+鼠标、键盘、截图、窗口枚举全部走 Windows 系统 API（`SetCursorPos` / `mouse_event` / `SendInput` / `BitBlt` / `EnumWindows`），启动不再导入任何输入库；`type` 走 `SendInput` 发 Unicode，中文和 emoji 都能打，且不占用你的剪贴板。
 
 连续动作写成 steps 文件一次跑完，也能省掉每步的启动开销：
 

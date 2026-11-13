@@ -18,10 +18,10 @@ classifiers = [
   "Topic :: Desktop Environment",
   "Topic :: Software Development :: User Interfaces",
 ]
-dependencies = ["pyautogui", "pillow"]
+dependencies = ["pillow"]
 
 [project.optional-dependencies]
-windows = ["pygetwindow", "pyvda"]
+windows = ["pyvda"]
 mcp = ["mcp[cli]"]
 
 [project.scripts]
