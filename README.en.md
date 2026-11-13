@@ -79,6 +79,9 @@ python paw.py launch "steam://open/main"  # open a file, URL or protocol
 python paw.py wait 1.5                    # wait
 python paw.py uia "Notepad"               # list controls and their exact rectangles
 python paw.py uia-click "Notepad" "OK"    # click a control by name (no coordinates)
+python paw.py web                         # list clickable elements in the page
+python paw.py web Submit                  # only those whose text contains "Submit"
+python paw.py web-click "Publish release" # click it (via the browser debugging protocol)
 python paw.py start                       # start the resident service (~9 ms per command)
 python paw.py stop                        # shut the resident service down
 python paw.py clean                       # trim the temp screenshot folder now
@@ -117,6 +120,38 @@ window: Settings  (1290,229)-(3210,1669)
 ```
 
 `uia-click` goes through UI Automation's Invoke, so it **doesn't depend on the cursor position** and keeps working when the window is covered.
+
+## Web pages (web)
+
+Browsers draw their UI themselves, so UIA only sees one or two empty panes inside them. But the browser has its own debugging interface (Chrome DevTools Protocol): ask it "what can I click on this page, and where exactly", and it answers **down to the pixel**.
+
+Prerequisite: start the browser with a debugging port *and* a separate profile directory (Chromium stopped allowing debug ports on the default profile):
+
+```bash
+msedge.exe --remote-debugging-port=9222 --user-data-dir="%TEMP%\paw-edge"
+```
+
+Log in to the site you care about once in that window, then:
+
+```bash
+python paw.py web                          # every clickable element on the page
+python paw.py web Submit                   # only those whose text contains "Submit"
+python paw.py web-click "Publish release"  # click it
+```
+
+Output:
+
+```
+page: Example Domains
+30 elements:
+  Domains                              (1553, 52)
+  Protocols                            (1639, 52)
+  Instructions and Guides              (820, 190)
+```
+
+`web-click` uses the browser's own `Input.dispatchMouseEvent`, so it needs **no screen coordinates** and works even when the window is covered. Add `--real` to move the actual cursor instead.
+
+> The WebSocket client is hand-written (`_ws_connect` / `_ws_send` / `_ws_recv`, ~100 lines) — no third-party library, so `paw` still has zero new dependencies.
 
 ## Resident service (start / stop)
 

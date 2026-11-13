@@ -86,6 +86,9 @@ python paw.py run steps.txt --parallel    # 并行跑打开/查看类步骤
 python paw.py run -                       # 从标准输入读
 python paw.py uia "记事本"                 # 列出窗口里所有控件和精确坐标
 python paw.py uia-click "记事本" "确定"     # 按控件名点击（不用估坐标）
+python paw.py web                         # 列出网页里可点的元素（文字 + 坐标）
+python paw.py web 发布                     # 只看文字含「发布」的
+python paw.py web-click "Publish release" # 点网页上的按钮（走浏览器调试接口）
 python paw.py start                       # 启动常驻服务（之后每条命令 ~9ms）
 python paw.py stop                        # 关掉常驻服务
 ```
@@ -121,6 +124,38 @@ python paw.py uia-click "设置" "确定"       # 直接点名叫「确定」的
 ```
 
 `uia-click` 走的是 UI Automation 的 Invoke，**不依赖鼠标位置**，也不怕窗口被挡。
+
+## 网页操作（web）
+
+浏览器界面是自绘的，UIA 在里面只能看到一两个空壳 Pane。但浏览器自己有个调试接口（Chrome DevTools 协议），问它「页面上有哪些按钮、在哪」，它会给你**精确到像素**的答案。
+
+前提：用调试端口启动浏览器，并且配一个独立配置目录（Chromium 从某版起，默认配置不允许开调试端口）：
+
+```bash
+msedge.exe --remote-debugging-port=9222 --user-data-dir="%TEMP%\paw-edge"
+```
+
+在这个窗口里登录一次你要操作的网站，然后：
+
+```bash
+python paw.py web                          # 列出页面上所有可点元素
+python paw.py web 发布                      # 只列文字含「发布」的
+python paw.py web-click "Publish release"  # 点它
+```
+
+输出：
+
+```
+页面：Example Domains
+共 30 个：
+  Domains                              (1553, 52)
+  Protocols                            (1639, 52)
+  Instructions and Guides              (820, 190)
+```
+
+`web-click` 默认走浏览器的调试接口（`Input.dispatchMouseEvent`），**不需要屏幕坐标**，也不受窗口遮挡影响。想模拟真实鼠标（会移动光标）：加 `--real`。
+
+> 自己手写了 WebSocket 客户端（`_ws_connect` / `_ws_send` / `_ws_recv`，约 100 行），不引第三方库——`paw` 依然零新依赖。
 
 ## 常驻服务（start / stop）
 
