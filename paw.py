@@ -607,68 +607,67 @@ def _do_web_click(text: str, port: int = CDP_PORT, real: bool = False) -> int:
             pass
 
 
-def _plan_text(cmd: str, args: list) -> str:
-    if cmd == "size":
-        return "读取屏幕分辨率（不改任何东西）"
-    if cmd == "web":
-        kw = " ".join(a for a in args if not a.startswith("--"))
-        return f"列出网页里可点的元素{'（过滤：' + kw + '）' if kw else ''}（不改任何东西）"
-    if cmd == "web-click":
-        kw = " ".join(a for a in args if not a.startswith("--"))
-        how = "真实鼠标事件" if "--real" in args else "浏览器调试接口"
-        return f"在网页里找文字含「{kw}」的元素并点击（{how}）"
-    if cmd == "uia":
-        return f"列出窗口「{args[0] if args else ''}」里的控件和坐标（不改任何东西）"
-    if cmd == "uia-click":
-        a = args[0] if args else ""
-        b = args[1] if len(args) > 1 else ""
-        return f"点击窗口「{a}」里名为「{b}」的控件（按控件找位置，不用估坐标）"
-    if cmd == "scale":
-        return "读取显示缩放比例（不改任何东西）"
-    if cmd == "clean":
-        keep = args[0] if args else str(SHOT_KEEP)
-        return f"清理临时截图，只保留最近 {keep} 张（{_shot_dir()}）"
-    if cmd == "shot":
-        target = args[0] if args and not args[0].startswith("--") else "临时目录（自动保留最近 %d 张）" % SHOT_KEEP
-        return f"截屏并保存到 {target}（不改任何东西）"
-    if cmd == "windows":
-        return "列出当前窗口和位置（不改任何东西）"
-    if cmd == "desks":
-        return "列出虚拟桌面和当前所在桌面（不改任何东西）"
-    if cmd == "desk":
-        sub = args[0] if args else "list"
-        return f"虚拟桌面操作：{sub}（{' '.join(args[1:])}）"
-    if cmd == "find":
-        return f"在屏幕上查找图片 {args[0] if args else '?'}，返回坐标（不点击）"
-    if cmd == "launch":
-        return f"打开：{args[0] if args else '?'}"
-    if cmd == "focus":
-        return f"把标题含「{args[0] if args else '?'}」的窗口切到前台（不点击）"
-    if cmd == "goto":
-        return f"在浏览器地址栏打开：{args[0] if args else '?'}（输完等 0.6s 再回车）"
-    if cmd == "wait":
-        return f"等 {args[0] if args else '?'} 秒（什么都不做，等页面/动画加载）"
-    if cmd == "move":
-        x, y = int(args[0]), int(args[1])
-        return f"把鼠标移动到 ({x}, {y}){_where(x, y)}，不点击"
-    if cmd == "click":
-        x, y = int(args[0]), int(args[1])
-        return f"在 ({x}, {y}) 单击鼠标左键{_where(x, y)}"
-    if cmd == "dclick":
-        x, y = int(args[0]), int(args[1])
-        return f"在 ({x}, {y}) 双击鼠标左键{_where(x, y)}"
-    if cmd == "rclick":
-        x, y = int(args[0]), int(args[1])
-        return f"在 ({x}, {y}) 单击鼠标右键{_where(x, y)}"
-    if cmd == "scroll":
-        return f"滚动滚轮 {args[0]} 格"
-    if cmd == "type":
-        return f"输入文本：{' '.join(args)[:60]}"
-    if cmd == "key":
-        return f"按一次键：{args[0]}"
-    if cmd == "hotkey":
-        return f"按组合键：{' + '.join(args)}"
-    return cmd
+def _xy(a: list):
+    """行动表里的坐标 + 所在窗口，配 % 格式化用。"""
+    x, y = int(a[0]), int(a[1])
+    return x, y, _where(x, y)
+
+
+def _plan_shot(a: list, ns) -> str:
+    if a and not a[0].startswith("--"):
+        target = a[0]
+    else:
+        target = "临时目录（自动保留最近 %d 张）" % SHOT_KEEP
+    return f"截屏并保存到 {target}（不改任何东西）"
+
+
+def _plan_web_click(a: list, ns) -> str:
+    how = "真实鼠标事件" if ns.real else "浏览器调试接口"
+    return "在网页里找文字含「%s」的元素并点击（%s）" % (" ".join(a), how)
+
+
+def _plan_uia_click(a: list, ns) -> str:
+    win, name = (a[0] if a else ""), (a[1] if len(a) > 1 else "")
+    return "点击窗口「%s」里名为「%s」的控件（按控件找位置，不用估坐标）" % (win, name)
+
+
+# 行动表：命令 → 文案。固定文案直接写字符串，要拼参数的用函数；表里没有的命令
+# （drag / screens / watch / start / stop 等）原样返回命令名，和以前一样。
+_PLAN = {
+    "size": "读取屏幕分辨率（不改任何东西）",
+    "scale": "读取显示缩放比例（不改任何东西）",
+    "windows": "列出当前窗口和位置（不改任何东西）",
+    "desks": "列出虚拟桌面和当前所在桌面（不改任何东西）",
+    "shot": _plan_shot,
+    "web": lambda a, ns: f"列出网页里可点的元素{'（过滤：' + ' '.join(a) + '）' if a else ''}（不改任何东西）",
+    "web-click": _plan_web_click,
+    "uia": lambda a, ns: f"列出窗口「{a[0] if a else ''}」里的控件和坐标（不改任何东西）",
+    "uia-click": _plan_uia_click,
+    "clean": lambda a, ns: f"清理临时截图，只保留最近 {a[0] if a else SHOT_KEEP} 张（{_shot_dir()}）",
+    "desk": lambda a, ns: f"虚拟桌面操作：{a[0] if a else 'list'}（{' '.join(a[1:])}）",
+    "find": lambda a, ns: f"在屏幕上查找图片 {a[0] if a else '?'}，返回坐标（不点击）",
+    "launch": lambda a, ns: f"打开：{a[0] if a else '?'}",
+    "focus": lambda a, ns: f"把标题含「{a[0] if a else '?'}」的窗口切到前台（不点击）",
+    "goto": lambda a, ns: f"在浏览器地址栏打开：{a[0] if a else '?'}（输完等 0.6s 再回车）",
+    "wait": lambda a, ns: f"等 {a[0] if a else '?'} 秒（什么都不做，等页面/动画加载）",
+    "move": lambda a, ns: "把鼠标移动到 (%d, %d)%s，不点击" % _xy(a),
+    "click": lambda a, ns: "在 (%d, %d) 单击鼠标左键%s" % _xy(a),
+    "dclick": lambda a, ns: "在 (%d, %d) 双击鼠标左键%s" % _xy(a),
+    "rclick": lambda a, ns: "在 (%d, %d) 单击鼠标右键%s" % _xy(a),
+    "scroll": lambda a, ns: f"滚动滚轮 {a[0]} 格",
+    "type": lambda a, ns: f"输入文本：{' '.join(a)[:60]}",
+    "key": lambda a, ns: f"按一次键：{a[0]}",
+    "hotkey": lambda a, ns: f"按组合键：{' + '.join(a)}",
+}
+
+
+def _plan_text(cmd: str, args) -> str:
+    """行动表文案。args 可以是 Namespace（CLI），也可以是字符串列表（serve.py、测试）。"""
+    fn = _PLAN.get(cmd)
+    if fn is None:
+        return cmd
+    ns = args if isinstance(args, argparse.Namespace) else _parse_list(cmd, args)
+    return fn(list(getattr(ns, "args", None) or []), ns) if callable(fn) else fn
 
 
 def _do_launch(target: str) -> None:
@@ -1306,209 +1305,183 @@ def _remote_exec(port: str, cmd: str, args: list, as_json: bool) -> int:
     return 0 if data.get("ok") else 1
 
 
+def _parse_list(cmd: str, args: list) -> argparse.Namespace:
+    """把参数列表当成命令行解析一遍（serve.py、steps、单元测试走这条路）。
+
+    认不出的开关不报错，照旧留在位置词里；解析失败按参数错误处理。
+    """
+    try:
+        ns, rest = _PARSER.parse_known_args([cmd] + list(args))
+    except SystemExit:
+        raise ValueError("开关写法不对")
+    ns.args = list(getattr(ns, "args", None) or []) + list(rest)
+    return ns
+
+
+def _scale(a: list, ns) -> int:
+    w, h = _screen_size()
+    s = _dpi_scale()
+    print(f"缩放 {s:.2f}x（{int(s * 100)}%）：物理 {w}x{h}，逻辑 {int(w / s)}x{int(h / s)}")
+    print("shot 与 click 都用物理像素；按缩略图/预览图估坐标时，先乘这个比例。")
+    return 0
+
+
+def _web(a: list, ns) -> int:
+    port = int(ns.port) if ns.port else CDP_PORT
+    try:
+        return _do_web(" ".join(a), port)
+    except Exception as exc:
+        print(f"网页读取失败：{exc}", file=sys.stderr)
+        return 1
+
+
+def _web_click(a: list, ns) -> int:
+    port = int(ns.port) if ns.port else CDP_PORT
+    if not a:
+        print("用法：paw.py web-click \"按钮文字\" [--port 9222] [--real]", file=sys.stderr)
+        return 2
+    try:
+        return _do_web_click(" ".join(a), port, real=bool(ns.real))
+    except Exception as exc:
+        print(f"网页点击失败：{exc}", file=sys.stderr)
+        return 1
+
+
+def _uia_click(a: list, ns) -> int:
+    if len(a) < 2:
+        print("用法：paw.py uia-click <窗口标题关键词> <控件名>", file=sys.stderr)
+        return 2
+    return _do_uia_click(a[0], " ".join(a[1:]))
+
+
+def _clean(a: list, ns) -> int:
+    keep = int(a[0]) if a else SHOT_KEEP
+    print(f"清理了 {_clean_shots(keep)} 张（保留最近 {keep} 张）：{_shot_dir()}")
+    return 0
+
+
+def _shot(a: list, ns) -> int:
+    c = [int(v) for v in str(ns.crop).split(",")] if ns.crop else []
+    crop = (c[0], c[1], c[0] + c[2], c[1] + c[3]) if len(c) == 4 else None
+    out = (a[-1] if a else None) or _default_shot_path()
+    img = _grab_screen()
+    if crop:
+        img = img.crop(crop)
+    if ns.jpg:
+        img.convert("RGB").save(out, quality=88)
+    else:
+        img.save(out)
+    _clean_shots()
+    print(out, img.size)
+    return 0
+
+
+def _drag(a: list, ns) -> int:
+    x1, y1, x2, y2 = (int(v) for v in a[:4])
+    dur = float(a[4]) if len(a) > 4 else 0.4
+    _drag_to(x1, y1, x2, y2, dur)
+    print("dragged", (x1, y1), "->", (x2, y2))
+    return 0
+
+
+def _wait(a: list, ns) -> int:
+    secs = float(a[0]) if a else 1.0
+    time.sleep(max(0.0, secs))
+    print("waited", secs, "s")
+    return 0
+
+
+def _hotkey_cmd(a: list, ns) -> int:
+    _hotkey(*a)
+    print("hotkey", " ".join(a))  # 空参数时是 "hotkey "，和老版本一样
+    return 0
+
+
+# 命令表：命令 → (动作, 打印前缀, 前缀后跟几个位置词；None 全部、0 不跟)。
+# 动作拿 (位置词, 解析好的开关)，返回退出码（None 当 0）；前缀为 None 时由
+# 动作自己打印。顺序照 CMD_LEVEL，方便对着权限表读。
+_COMMANDS = {
+    "size": (lambda a, ns: print(_screen_size()), None, 0),
+    "shot": (_shot, None, 0),
+    "windows": (lambda a, ns: _list_windows(), None, 0),
+    "find": (lambda a, ns: 0, "find 需要图像识别库，已不再内置；要按图找，用 uia（控件）或 web（网页）", 0),
+    "scale": (_scale, None, 0),
+    "launch": (lambda a, ns: _do_launch(a[0]), "launched", 1),
+    "move": (lambda a, ns: _move_to(int(a[0]), int(a[1])), "moved", 2),
+    "desks": (lambda a, ns: _desk_cmd(["list"]), None, 0),
+    "desk": (lambda a, ns: _desk_cmd(a), None, 0),
+    "screens": (lambda a, ns: _screens_cmd(a), None, 0),
+    "watch": (lambda a, ns: _watch_cmd(a), None, 0),
+    "focus": (lambda a, ns: _focus_cmd(a), None, 0),
+    "wait": (_wait, None, 0),
+    "goto": (lambda a, ns: _goto_cmd(a), None, 0),
+    "uia": (lambda a, ns: _do_uia(a[0] if a else ""), None, 0),
+    "start": (lambda a, ns: 0, None, 0),
+    "stop": (lambda a, ns: 0, None, 0),
+    "clean": (_clean, None, 0),
+    "web": (_web, None, 0),
+    "web-click": (_web_click, None, 0),
+    "click": (lambda a, ns: _click_at(int(a[0]), int(a[1])), "clicked", 2),
+    "dclick": (lambda a, ns: _click_at(int(a[0]), int(a[1]), double=True), "double-clicked", 2),
+    "rclick": (lambda a, ns: _click_at(int(a[0]), int(a[1]), button="right"), "right-clicked", 2),
+    "scroll": (lambda a, ns: _scroll_at(int(a[0])), "scrolled", 1),
+    "drag": (_drag, None, 0),
+    "type": (lambda a, ns: _type_text(" ".join(a)), "typed", 0),
+    "key": (lambda a, ns: _press(a[0]), "key", 1),
+    "hotkey": (_hotkey_cmd, None, 0),
+    "uia-click": (_uia_click, None, 0),
+}
+
+# 这几个命令在急停检查之前执行（看板、桌面切换不该被急停挡住）。
+_EARLY = frozenset(("watch", "screens", "desks", "desk"))
+
+
+def _dispatch(cmd: str, a: list, ns) -> int:
+    """查表执行一条命令：先做动作，再按表里的前缀打印。"""
+    fn, say, n = _COMMANDS[cmd]
+    rc = fn(a, ns)
+    if say:
+        print(say, *(a if n is None else a[:n]))
+    return 0 if rc is None else rc
+
+
 def run_one(
-    cmd: str, args: list, level: str, show_plan: bool, dry_run: bool, note: str = ""
+    cmd: str, args, level: str, show_plan: bool, dry_run: bool, note: str = ""
 ) -> int:
-    """执行一条动作。返回 0 成功；非 0 表示失败/被拦截。"""
+    """执行一条动作，返回退出码（0 成功）。args 可以是 Namespace 或字符串列表。"""
     if STOP_FLAG.is_set():
         print("急停中：拒绝执行（在 Web 看板点「解除急停」或重启进程）", file=sys.stderr)
         return 5
-
     if cmd not in CMD_LEVEL:
         print(f"未知动作：{cmd}", file=sys.stderr)
         return 2
+    if not isinstance(args, argparse.Namespace):
+        args = _parse_list(cmd, args)
+    words = list(getattr(args, "args", None) or [])
 
     if not _level_allows(level, cmd):
-        print(
-            f"权限不足：当前等级 {level}，{cmd} 需要 {CMD_LEVEL[cmd]} 级权限",
-            file=sys.stderr,
-        )
+        print(f"权限不足：当前等级 {level}，{cmd} 需要 {CMD_LEVEL[cmd]} 级权限", file=sys.stderr)
         return 3
 
-    payload = " ".join(args)
-    if level == "safe":
-        hits = _danger_hits(payload)
-        if hits:
-            print(
-                f"安全拦截：这一步看起来涉及「{hits[0]}」，safe 级不允许——"
-                "要人工确认，或改用 --level full",
-                file=sys.stderr,
-            )
-            return 4
+    hits = _danger_hits(" ".join(words)) if level == "safe" else []
+    if hits:
+        print(f"安全拦截：这一步看起来涉及「{hits[0]}」，safe 级不允许——"
+              "要人工确认，或改用 --level full", file=sys.stderr)
+        return 4
 
     if show_plan:
         plan = _plan_text(cmd, args)
-        if note:
-            plan = f"{plan}  · {note}"
-        print(f"计划：{plan}", file=sys.stderr)
-
+        print(f"计划：{plan + '  · ' + note if note else plan}", file=sys.stderr)
     if dry_run:
         return 0
-
-    if cmd == "watch":
-        return _watch_cmd(args)
-    if cmd == "screens":
-        return _screens_cmd(args)
-    if cmd in ("desks", "desk"):
-        return _desk_cmd(args if cmd == "desk" else ["list"])
-
+    if cmd in _EARLY:
+        return _dispatch(cmd, words, args)
     if cmd not in ("size", "shot", "windows") and _emergency_pressed():
         print("急停：检测到鼠标左右键同时按下，已中止", file=sys.stderr)
         return 1
 
     try:
-        if cmd == "size":
-            print(_screen_size())
-
-        elif cmd == "scale":
-            w, h = _screen_size()
-            s = _dpi_scale()
-            print(f"缩放 {s:.2f}x（{int(s * 100)}%）：物理 {w}x{h}，逻辑 {int(w / s)}x{int(h / s)}")
-            print("shot 与 click 都用物理像素；按缩略图/预览图估坐标时，先乘这个比例。")
-
-        elif cmd == "web":
-            port = CDP_PORT
-            words = []
-            i = 0
-            while i < len(args):
-                if args[i] == "--port" and i + 1 < len(args):
-                    port = int(args[i + 1])
-                    i += 2
-                else:
-                    words.append(args[i])
-                    i += 1
-            try:
-                return _do_web(" ".join(words), port)
-            except Exception as exc:
-                print(f"网页读取失败：{exc}", file=sys.stderr)
-                return 1
-
-        elif cmd == "web-click":
-            port = CDP_PORT
-            real = "--real" in args
-            words = []
-            i = 0
-            while i < len(args):
-                if args[i] == "--port" and i + 1 < len(args):
-                    port = int(args[i + 1])
-                    i += 2
-                elif args[i] == "--real":
-                    i += 1
-                else:
-                    words.append(args[i])
-                    i += 1
-            if not words:
-                print("用法：paw.py web-click \"按钮文字\" [--port 9222] [--real]", file=sys.stderr)
-                return 2
-            try:
-                return _do_web_click(" ".join(words), port, real=real)
-            except Exception as exc:
-                print(f"网页点击失败：{exc}", file=sys.stderr)
-                return 1
-
-        elif cmd == "uia":
-            return _do_uia(args[0] if args else "")
-
-        elif cmd == "uia-click":
-            if len(args) < 2:
-                print("用法：paw.py uia-click <窗口标题关键词> <控件名>", file=sys.stderr)
-                return 2
-            return _do_uia_click(args[0], " ".join(args[1:]))
-
-        elif cmd == "clean":
-            keep = int(args[0]) if args else SHOT_KEEP
-            n = _clean_shots(keep)
-            print(f"清理了 {n} 张（保留最近 {keep} 张）：{_shot_dir()}")
-
-        elif cmd == "shot":
-            rest = args
-            crop = None
-            jpg = False
-            out = None
-            i = 0
-            while i < len(rest):
-                if rest[i] == "--crop" and i + 1 < len(rest):
-                    c = tuple(int(v) for v in rest[i + 1].split(","))
-                    if len(c) == 4:
-                        crop = (c[0], c[1], c[0] + c[2], c[1] + c[3])
-                    i += 2
-                elif rest[i] == "--jpg":
-                    jpg = True
-                    i += 1
-                else:
-                    out = rest[i]
-                    i += 1
-            out = out or _default_shot_path()
-            img = _grab_screen()
-            if crop:
-                img = img.crop(crop)
-            if jpg:
-                img = img.convert("RGB")
-                img.save(out, quality=88)
-            else:
-                img.save(out)
-            _clean_shots()
-            print(out, img.size)
-
-        elif cmd == "drag":
-            x1, y1, x2, y2 = (int(v) for v in args[:4])
-            dur = float(args[4]) if len(args) > 4 else 0.4
-            _drag_to(x1, y1, x2, y2, dur)
-            print("dragged", (x1, y1), "->", (x2, y2))
-
-        elif cmd == "launch":
-            _do_launch(args[0])
-            print("launched", args[0])
-
-        elif cmd == "focus":
-            return _focus_cmd(args)
-
-        elif cmd == "goto":
-            return _goto_cmd(args)
-
-        elif cmd == "wait":
-            secs = float(args[0]) if args else 1.0
-            time.sleep(max(0.0, secs))
-            print("waited", secs, "s")
-
-        elif cmd == "click":
-            _click_at(int(args[0]), int(args[1]))
-            print("clicked", args[0], args[1])
-
-        elif cmd == "dclick":
-            _click_at(int(args[0]), int(args[1]), double=True)
-            print("double-clicked", args[0], args[1])
-
-        elif cmd == "rclick":
-            _click_at(int(args[0]), int(args[1]), button="right")
-            print("right-clicked", args[0], args[1])
-
-        elif cmd == "move":
-            _move_to(int(args[0]), int(args[1]))
-            print("moved", args[0], args[1])
-
-        elif cmd == "type":
-            _type_text(" ".join(args))
-            print("typed")
-
-        elif cmd == "key":
-            _press(args[0])
-            print("key", args[0])
-
-        elif cmd == "hotkey":
-            _hotkey(*args)
-            print("hotkey", " ".join(args))
-
-        elif cmd == "scroll":
-            _scroll_at(int(args[0]))
-            print("scrolled", args[0])
-
-        elif cmd == "find":
-            print("find 需要图像识别库，已不再内置；要按图找，用 uia（控件）或 web（网页）")
-
-        elif cmd == "windows":
-            _list_windows()
-
+        return _dispatch(cmd, words, args)
     except (IndexError, ValueError) as e:
         print(f"参数错误：{e}", file=sys.stderr)
         return 2
@@ -1517,7 +1490,6 @@ def run_one(
             print("failsafe: 已中止", file=sys.stderr)
             return 1
         raise
-    return 0
 
 
 def _split_step(line: str):
@@ -1546,49 +1518,154 @@ def _read_steps(path: str) -> list:
     return steps
 
 
+# 子命令表：命令 → (位置参数的提示文字或 None, 开关列表, 一句话说明)。
+# 开关项形如 ("crop", "x,y,w,h")：第二个值为 None 表示不带值的开关。
+# 位置的取值一律当字符串收下，校验留在命令函数里：--json 的 args、行动表文案、
+# 「参数错误：…」的提示都要和以前逐字一致。
+_SUBCOMMANDS = {
+    "size": (None, [], "读屏幕分辨率"),
+    "shot": ("path", [("crop", "x,y,w,h"), ("jpg", None)], "截屏保存到文件"),
+    "windows": (None, [], "列出窗口标题和位置"),
+    "find": ("图片", [], "按图找坐标（需要图像识别库）"),
+    "scale": (None, [], "读显示缩放比例"),
+    "launch": ("目标", [], "打开网址或程序"),
+    "move": ("x y", [], "把鼠标移到坐标"),
+    "desks": (None, [], "列出虚拟桌面"),
+    "desk": ("子命令 [参数]", [], "虚拟桌面操作：list / new / switch / close"),
+    "screens": (None, [], "每个虚拟桌面上开着什么"),
+    "watch": ("秒", [], "实时打印当前在做什么"),
+    "focus": ("标题关键词", [], "把窗口切到前台"),
+    "wait": ("秒", [], "等一会儿"),
+    "goto": ("网址", [], "在浏览器地址栏打开"),
+    "uia": ("窗口标题", [("deep", None)], "列出窗口里的控件"),
+    "start": ("端口", [], "启动常驻服务"),
+    "stop": (None, [], "停止常驻服务"),
+    "clean": ("保留张数", [], "清理临时截图"),
+    "web": ("关键词", [("port", "端口")], "列出网页里可点的元素"),
+    "web-click": ("按钮文字", [("port", "端口"), ("real", None)], "点击网页里的元素"),
+    "click": ("x y", [], "左键单击"),
+    "dclick": ("x y", [], "左键双击"),
+    "rclick": ("x y", [], "右键单击"),
+    "scroll": ("格数", [], "滚动滚轮"),
+    "drag": ("x1 y1 x2 y2 [时长]", [], "按住左键拖拽"),
+    "type": ("文字", [], "输入文字"),
+    "key": ("键名", [], "按一次键"),
+    "hotkey": ("键名...", [], "按组合键"),
+    "uia-click": ("窗口标题 控件名", [], "按控件名点击"),
+    "run": ("steps.txt 或 -", [], "跑一串步骤"),
+}
+
+_FLAGS_BY_CMD = {name: item[1] for name, item in _SUBCOMMANDS.items()}
+
+# 公共开关：开关名 → (argparse 关键字参数, 说明)。默认值在 _DEFAULTS 里。
+_COMMON = [
+    ("--delay", {"type": float}, "动作前等待秒数"),
+    ("--pause", {"type": float}, "每个动作之间的间隔秒数（默认 0.15；想更快设 0.05，页面慢就设 1）"),
+    ("--level", {"choices": list(LEVEL_ORDER.keys())}, "权限等级：browse / safe / full（默认 safe，可用 PC_LEVEL 环境变量）"),
+    ("--no-plan", {"action": "store_true"}, "不打印行动表"),
+    ("--json", {"action": "store_true"}, "以 JSON 输出结果（方便 agent 解析）"),
+    ("--dry-run", {"action": "store_true"}, "只打印行动表，不执行"),
+    ("--remote", {"nargs": "?", "const": os.environ.get("PAW_REMOTE", "8000")}, "转发给常驻服务执行（快 20 倍）：--remote 8899，或设 PAW_REMOTE"),
+    ("--parallel", {"action": "store_true"}, "run 时并行执行「打开/查看」类步骤（鼠标键盘动作仍串行，否则会打架）"),
+]
+
+_DEFAULTS = {
+    "delay": 0.0, "pause": 0.15, "level": os.environ.get("PC_LEVEL", "safe"), "remote": None,
+    "no_plan": False, "json": False, "dry_run": False, "parallel": False,
+}
+
+
+def _common_parser(quiet: bool = False) -> argparse.ArgumentParser:
+    """公共开关。子 parser 用 SUPPRESS，否则子层的默认值会盖掉命令前面那份。"""
+    p = argparse.ArgumentParser(add_help=False)
+    for flag, kw, help_text in _COMMON:
+        default = argparse.SUPPRESS if quiet else _DEFAULTS[flag[2:].replace("-", "_")]
+        p.add_argument(flag, default=default, help=help_text, **kw)
+    return p
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """子命令解析器：CLI 和 _parse_list 共用一份。"""
+    common = _common_parser(quiet=True)
+    ap = argparse.ArgumentParser(
+        description="control the mouse and keyboard from the CLI", parents=[_common_parser()]
+    )
+    subs = ap.add_subparsers(dest="cmd", metavar="cmd", required=True)
+    for name in ALL_CMDS + ["run"]:
+        metavar, flags, help_text = _SUBCOMMANDS[name]
+        sp = subs.add_parser(name, parents=[common], help=help_text, description=help_text)
+        if metavar:
+            sp.add_argument("args", nargs="*", metavar=metavar)
+        for flag, hint in flags:
+            extra = {"action": "store_true"} if hint is None else {"metavar": hint}
+            sp.add_argument("--" + flag, **extra)
+    return ap
+
+
+_PARSER = _build_parser()
+
+
+def _send_args(cmd: str, ns, words: list) -> list:
+    """把开关拼回参数表：--remote 转发用的是纯文本，对面收到还要再解析一遍。"""
+    out = list(words)
+    for flag, hint in _FLAGS_BY_CMD.get(cmd, ()):
+        value = getattr(ns, flag, None)
+        if value not in (None, False):
+            out += ["--" + flag] + ([str(value)] if hint is not None else [])
+    return out
+
+
+def _run_steps(a, args: list) -> int:
+    """跑 steps 文件。--parallel 只并行「打开 / 查看」类步骤，鼠标键盘仍串行。"""
+    if not args:
+        print("用法：paw.py run <steps.txt|->", file=sys.stderr)
+        return 2
+    steps = _read_steps(args[0])
+    if not steps:
+        print("没有可执行的步骤", file=sys.stderr)
+        return 2
+
+    if a.parallel:
+        mouse_cmds = {"click", "dclick", "rclick", "scroll", "type", "key", "hotkey", "move"}
+        bad = [s[1] for s in steps if s[1] in mouse_cmds]
+        if bad:
+            print("并行模式只并行「打开 / 查看」类步骤；鼠标键盘动作必须串行"
+                  f"（这些会打架：{', '.join(bad[:3])}）", file=sys.stderr)
+            return 2
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _one(item):
+            idx, (line, cmd, sargs, note) = item
+            print(f"[{idx}/{len(steps)}] {line}", file=sys.stderr)
+            return run_one(cmd, sargs, a.level, not a.no_plan, a.dry_run, note)
+
+        with ThreadPoolExecutor(max_workers=min(8, len(steps))) as ex:
+            results = list(ex.map(_one, enumerate(steps, 1)))
+        bad_idx = next((i for i, rc in enumerate(results, 1) if rc != 0), None)
+        if bad_idx is not None:
+            print(f"第 {bad_idx} 步失败（返回码 {results[bad_idx - 1]}）", file=sys.stderr)
+            return results[bad_idx - 1]
+        print(f"完成，共 {len(steps)} 步（并行）", file=sys.stderr)
+        return 0
+
+    for idx, (line, cmd, sargs, note) in enumerate(steps, 1):
+        print(f"[{idx}/{len(steps)}] {line}", file=sys.stderr)
+        rc = run_one(cmd, sargs, a.level, not a.no_plan, a.dry_run, note)
+        if rc != 0:
+            print(f"第 {idx} 步失败（返回码 {rc}），已停止", file=sys.stderr)
+            return rc
+    print(f"完成，共 {len(steps)} 步", file=sys.stderr)
+    return 0
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description="control the mouse and keyboard from the CLI")
-    ap.add_argument("cmd", choices=ALL_CMDS + ["run"])
-    ap.add_argument("args", nargs="*")
-    ap.add_argument("--delay", type=float, default=0.0, help="动作前等待秒数")
-    ap.add_argument(
-        "--pause",
-        type=float,
-        default=0.15,
-        help="每个动作之间的间隔秒数（默认 0.15；想更快设 0.05，页面慢就设 1）",
-    )
-    ap.add_argument(
-        "--level",
-        default=os.environ.get("PC_LEVEL", "safe"),
-        choices=list(LEVEL_ORDER.keys()),
-        help="权限等级：browse / safe / full（默认 safe，可用 PC_LEVEL 环境变量）",
-    )
-    ap.add_argument("--no-plan", action="store_true", help="不打印行动表")
-    ap.add_argument("--json", action="store_true", help="以 JSON 输出结果（方便 agent 解析）")
-    ap.add_argument("--dry-run", action="store_true", help="只打印行动表，不执行")
-    ap.add_argument(
-        "--remote",
-        nargs="?",
-        const=os.environ.get("PAW_REMOTE", "8000"),
-        default=None,
-        help="转发给常驻服务执行（快 20 倍）：--remote 8899，或设 PAW_REMOTE",
-    )
-    ap.add_argument(
-        "--parallel",
-        action="store_true",
-        help="run 时并行执行「打开/查看」类步骤（鼠标键盘动作仍串行，否则会打架）",
-    )
-    a, extra = ap.parse_known_args()
-    if extra:
-        a.args = list(a.args) + list(extra)
+    a = _PARSER.parse_args()
+    args = list(getattr(a, "args", None) or [])
 
     if a.remote:
-        return _remote_exec(a.remote, a.cmd, a.args, a.json)
-
-    if a.cmd == "start":
-        return _do_start(int(a.args[0]) if a.args else 8000)
-    if a.cmd == "stop":
-        return _do_stop()
+        return _remote_exec(a.remote, a.cmd, _send_args(a.cmd, a, args), a.json)
+    if a.cmd in ("start", "stop"):
+        return _do_start(int(args[0]) if args else 8000) if a.cmd == "start" else _do_stop()
 
     if a.delay:
         time.sleep(a.delay)
@@ -1597,80 +1674,31 @@ def main() -> int:
 
     try:
         if a.cmd == "run":
-            if not a.args:
-                print("用法：paw.py run <steps.txt|->", file=sys.stderr)
-                return 2
-            steps = _read_steps(a.args[0])
-            if not steps:
-                print("没有可执行的步骤", file=sys.stderr)
-                return 2
+            return _run_steps(a, args)
+        if not a.json:
+            return run_one(a.cmd, a, a.level, not a.no_plan, a.dry_run)
 
-            if a.parallel:
-                mouse_cmds = {"click", "dclick", "rclick", "scroll", "type", "key", "hotkey", "move"}
-                bad = [s[1] for s in steps if s[1] in mouse_cmds]
-                if bad:
-                    print(
-                        "并行模式只并行「打开 / 查看」类步骤；鼠标键盘动作必须串行"
-                        f"（这些会打架：{', '.join(bad[:3])}）",
-                        file=sys.stderr,
-                    )
-                    return 2
+        import contextlib
+        import io
+        import json as _json
 
-                from concurrent.futures import ThreadPoolExecutor
-
-                def _one(item):
-                    idx, (line, cmd, args, note) = item
-                    print(f"[{idx}/{len(steps)}] {line}", file=sys.stderr)
-                    return run_one(cmd, args, a.level, not a.no_plan, a.dry_run, note)
-
-                with ThreadPoolExecutor(max_workers=min(8, len(steps))) as ex:
-                    results = list(ex.map(_one, enumerate(steps, 1)))
-                bad_idx = next((i for i, rc in enumerate(results, 1) if rc != 0), None)
-                if bad_idx is not None:
-                    print(f"第 {bad_idx} 步失败（返回码 {results[bad_idx - 1]}）", file=sys.stderr)
-                    return results[bad_idx - 1]
-                print(f"完成，共 {len(steps)} 步（并行）", file=sys.stderr)
-                return 0
-
-            for idx, (line, cmd, args, note) in enumerate(steps, 1):
-                print(f"[{idx}/{len(steps)}] {line}", file=sys.stderr)
-                rc = run_one(cmd, args, a.level, not a.no_plan, a.dry_run, note)
-                if rc != 0:
-                    print(f"第 {idx} 步失败（返回码 {rc}），已停止", file=sys.stderr)
-                    return rc
-            print(f"完成，共 {len(steps)} 步", file=sys.stderr)
-            return 0
-
-        if a.json:
-            import contextlib
-            import io
-            import json as _json
-
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = run_one(a.cmd, a, a.level, not a.no_plan, a.dry_run)
+        rec = {"ok": rc == 0, "code": rc, "cmd": a.cmd, "args": args,
+               "stdout": out.getvalue().strip(), "stderr": err.getvalue().strip()}
+        if a.cmd in ("click", "dclick", "rclick", "move") and len(args) >= 2:
             try:
-                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-            except Exception:
+                rec["x"], rec["y"] = int(args[0]), int(args[1])
+                rec["window"] = _window_at(rec["x"], rec["y"])
+            except (ValueError, OSError):
                 pass
-            out, err = io.StringIO(), io.StringIO()
-            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-                rc = run_one(a.cmd, a.args, a.level, not a.no_plan, a.dry_run)
-            rec = {
-                "ok": rc == 0,
-                "code": rc,
-                "cmd": a.cmd,
-                "args": a.args,
-                "stdout": out.getvalue().strip(),
-                "stderr": err.getvalue().strip(),
-            }
-            if a.cmd in ("click", "dclick", "rclick", "move") and len(a.args) >= 2:
-                try:
-                    rec["x"], rec["y"] = int(a.args[0]), int(a.args[1])
-                    rec["window"] = _window_at(rec["x"], rec["y"])
-                except (ValueError, OSError):
-                    pass
-            print(_json.dumps(rec, ensure_ascii=False))
-            return rc
-
-        return run_one(a.cmd, a.args, a.level, not a.no_plan, a.dry_run)
+        print(_json.dumps(rec, ensure_ascii=False))
+        return rc
 
     except KeyboardInterrupt:
         print("interrupted", file=sys.stderr)
@@ -1679,7 +1707,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-
 
