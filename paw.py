@@ -51,6 +51,7 @@ import os
 import shlex
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import webbrowser
@@ -109,7 +110,47 @@ class _LazyPyAutoGUI:
 pyautogui = _LazyPyAutoGUI()
 
 
+SHOT_KEEP = 50  # 临时截图保留张数
+
+
+def _shot_dir() -> str:
+    """paw 自己产生的截图放这里，和用户指定的路径分开，方便自动清理。"""
+    d = os.path.join(tempfile.gettempdir(), "paw")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _default_shot_path() -> str:
+    return os.path.join(_shot_dir(), time.strftime("shot-%Y%m%d-%H%M%S.png"))
+
+
+def _clean_shots(keep: int = SHOT_KEEP) -> int:
+    """删 %TEMP%\\paw 里最旧的截图，只留最近 keep 张，返回删除个数。
+
+    只碰 paw 自己写进去的文件；用户 `shot 指定路径` 保存的图一张都不动。
+    """
+    d = _shot_dir()
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return 0
+    files = [os.path.join(d, n) for n in names
+             if n.lower().endswith((".png", ".jpg", ".jpeg"))]
+    if len(files) <= keep:
+        return 0
+    files.sort(key=os.path.getmtime)
+    removed = 0
+    for f in files[: len(files) - keep]:
+        try:
+            os.remove(f)
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
 def _screen_size():
+
     """屏幕物理像素尺寸。Windows 下用系统 API，避免为了两个数字导入 pyautogui。"""
     if sys.platform.startswith("win"):
         try:
@@ -142,7 +183,7 @@ CMD_LEVEL = {
     "launch": "browse", "move": "browse",
     "desks": "browse", "desk": "browse", "screens": "browse", "watch": "browse",
     "focus": "browse", "wait": "browse", "goto": "browse",
-    "uia": "browse", "start": "browse", "stop": "browse",
+    "uia": "browse", "start": "browse", "stop": "browse", "clean": "browse",
     "click": "safe", "dclick": "safe", "rclick": "safe", "scroll": "safe", "drag": "safe",
     "type": "safe", "key": "safe", "hotkey": "safe",
     "uia-click": "safe",
@@ -303,8 +344,12 @@ def _plan_text(cmd: str, args: list) -> str:
         return f"点击窗口「{a}」里名为「{b}」的控件（按控件找位置，不用估坐标）"
     if cmd == "scale":
         return "读取显示缩放比例（不改任何东西）"
+    if cmd == "clean":
+        keep = args[0] if args else str(SHOT_KEEP)
+        return f"清理临时截图，只保留最近 {keep} 张（{_shot_dir()}）"
     if cmd == "shot":
-        return f"截屏并保存到 {args[0] if args else 'screen.png'}（不改任何东西）"
+        target = args[0] if args and not args[0].startswith("--") else "临时目录（自动保留最近 %d 张）" % SHOT_KEEP
+        return f"截屏并保存到 {target}（不改任何东西）"
     if cmd == "windows":
         return "列出当前窗口和位置（不改任何东西）"
     if cmd == "desks":
@@ -909,11 +954,16 @@ def run_one(
                 return 2
             return _do_uia_click(args[0], " ".join(args[1:]))
 
+        elif cmd == "clean":
+            keep = int(args[0]) if args else SHOT_KEEP
+            n = _clean_shots(keep)
+            print(f"清理了 {n} 张（保留最近 {keep} 张）：{_shot_dir()}")
+
         elif cmd == "shot":
             rest = args
             crop = None
             jpg = False
-            out = "screen.png"
+            out = None
             i = 0
             while i < len(rest):
                 if rest[i] == "--crop" and i + 1 < len(rest):
@@ -927,6 +977,7 @@ def run_one(
                 else:
                     out = rest[i]
                     i += 1
+            out = out or _default_shot_path()
             try:
                 from PIL import ImageGrab
 
@@ -940,6 +991,7 @@ def run_one(
                 img.save(out, quality=88)
             else:
                 img.save(out)
+            _clean_shots()
             print(out, img.size)
 
         elif cmd == "drag":
