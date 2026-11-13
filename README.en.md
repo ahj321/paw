@@ -339,3 +339,7 @@ The part that actually clicks your mouse can't be tested headlessly — that's w
 
 MIT
 
+
+---
+
+Version **v2.1** — see [CHANGELOG.md](CHANGELOG.md).
