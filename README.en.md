@@ -76,9 +76,70 @@ python paw.py focus "Notepad"             # bring a window to the front by title
 python paw.py windows                     # list windows
 python paw.py launch "steam://open/main"  # open a file, URL or protocol
 python paw.py wait 1.5                    # wait
+python paw.py uia "Notepad"               # list controls and their exact rectangles
+python paw.py uia-click "Notepad" "OK"    # click a control by name (no coordinates)
+python paw.py start                       # start the resident service (~9 ms per command)
+python paw.py stop                        # shut the resident service down
 ```
 
 Every command prints what it is about to do before doing it, and `--pause <seconds>` sets the delay between actions (default 0.15).
+
+## Clicking by control (uia)
+
+`click x y` needs a coordinate, and coordinates come from screenshots plus eyeballing — **a few dozen pixels off and you miss**, especially on scaled displays, centered dialogs and self-drawn Qt / Electron UIs.
+
+`uia` asks Windows for the coordinates instead:
+
+```bash
+python paw.py uia "Settings"            # every control in that window, with rectangles
+python paw.py uia-click "Settings" "OK" # click the one named "OK"
+```
+
+Output looks like this:
+
+```
+window: Settings  (1290,229)-(3210,1669)
+  [PaneControl] 'Scene' (1290,271)-(1713,1181)
+  [ListItemControl] '4K Camera' (1294,1228)-(1708,1273)
+```
+
+`uia-click` goes through UI Automation's Invoke, so it **doesn't depend on the cursor position** and keeps working when the window is covered.
+
+## Resident service (start / stop)
+
+Every `python paw.py` pays for a fresh interpreter start (about 150 ms), which hurts when you click several times in a row. A resident service removes that:
+
+```bash
+python paw.py start    # background service on port 8000 by default
+python paw.py stop     # shut it down
+```
+
+Once it is up, any client can call it over HTTP:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/action -d "{\"line\":\"click 960 540\"}"
+```
+
+`paw.bat` is the same thing on Windows — add the folder to PATH and call it from anywhere:
+
+```bat
+paw click 960 540
+paw type hello
+paw shot D:/a.png
+paw stop
+```
+
+The first call starts the service and costs ~800 ms; every later one is single-digit milliseconds.
+
+Same `size` command, measured:
+
+| Path | Time |
+|---|---|
+| `python paw.py size` | 160 ms |
+| `paw.bat size` (service already up) | 0 ms inside the service |
+| `curl` straight to the service | 9 ms |
+
+> `paw.bat` only forwards; the logic lives in Python. If the service is down it runs `paw.py start` once.
 
 ## Steps file
 

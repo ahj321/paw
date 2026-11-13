@@ -82,7 +82,68 @@ python paw.py click 960 540 --delay 2     # 动作前等 2 秒
 python paw.py run steps.txt               # 跑一串
 python paw.py run steps.txt --parallel    # 并行跑打开/查看类步骤
 python paw.py run -                       # 从标准输入读
+python paw.py uia "记事本"                 # 列出窗口里所有控件和精确坐标
+python paw.py uia-click "记事本" "确定"     # 按控件名点击（不用估坐标）
+python paw.py start                       # 启动常驻服务（之后每条命令 ~9ms）
+python paw.py stop                        # 关掉常驻服务
 ```
+
+## 按控件点击（uia）
+
+`click x y` 要你先知道坐标。坐标从哪来？截图 + 眼睛估——**估偏几十像素就点空**，尤其是界面缩放、弹窗居中、Qt / Electron 这类自绘界面。
+
+`uia` 换成让 Windows 自己报坐标：
+
+```bash
+python paw.py uia "设置"                   # 这个窗口里有哪些控件、各自在哪
+python paw.py uia-click "设置" "确定"       # 直接点名叫「确定」的那个
+```
+
+输出长这样：
+
+```
+窗口：设置  (1290,229)-(3210,1669)
+  [PaneControl] '场景' (1290,271)-(1713,1181)
+  [ListItemControl] '4K Camera' (1294,1228)-(1708,1273)
+```
+
+`uia-click` 走的是 UI Automation 的 Invoke，**不依赖鼠标位置**，也不怕窗口被挡。
+
+## 常驻服务（start / stop）
+
+每次 `python paw.py` 都要重新启动一次 Python（约 150ms），连续点击时这点开销很烦。开个常驻服务就没有了：
+
+```bash
+python paw.py start          # 后台起一个服务，默认 8000 端口
+python paw.py stop           # 用完关掉
+```
+
+起来之后，任何客户端都能通过 HTTP 调它：
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/action -d "{\"line\":\"click 960 540\"}"
+```
+
+也可以直接用附带的 `paw.bat`（Windows 上把目录加进 PATH 后，任何地方都能敲）：
+
+```bat
+paw click 960 540
+paw type hello
+paw shot D:/a.png
+paw stop
+```
+
+它第一次会顺手把服务起起来，之后每条命令只花几毫秒。
+
+实测（同一条 `size`）：
+
+| 方式 | 耗时 |
+|---|---|
+| `python paw.py size` | 160 ms |
+| `paw.bat size`（服务已在跑） | 服务内 0 ms |
+| `curl` 直连服务 | 9 ms |
+
+> 注意：`paw.bat` 只转发、不含 Python；服务没起时它会自动 `paw.py start` 一次。
 
 ## steps 文件
 

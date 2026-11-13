@@ -1,5 +1,16 @@
 # 更新记录
 
+## v1.4
+
+**按控件点击，常驻服务，一条命令几十毫秒。**
+
+- 新增 `uia` / `uia-click`：走 Windows UI Automation，列出窗口里每个控件的精确矩形，或直接按名字点击——不用截图估坐标，窗口被挡住也能点；
+- 新增 `start` / `stop`：后台常驻服务，之后每条命令走 HTTP（约 9ms），不再每次启动 Python；
+- 新增 `paw.bat`：Windows 包装脚本，加进 PATH 后任意目录敲 `paw click ...`，第一次自动起服务；
+- `serve.py` 修 `import pc` 的错（pc.py 只是转发壳，导致所有 API 报 `AttributeError`）；
+- 速度：`python paw.py size` 160ms → 常驻服务内 0ms，`click` 24ms；
+- README 中英同步新增「按控件点击（uia）」「常驻服务（start / stop）」两节。
+
 ## v1.3
 
 **入口改回本名。**
