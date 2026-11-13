@@ -1,5 +1,21 @@
 # 更新记录
 
+## v2.3
+
+**三段 elif 链换成三张表，顺手把记下来的七个坑修了。**
+
+- `run_one` 从 214 行缩到 47 行：命令表 `_COMMANDS`（每条 `(动作, 打印前缀, 前缀后跟几个位置词)`）+ `_dispatch` 统一「先做动作、再按前缀 print」；
+- 行动表改成 `_PLAN` 字典（26 条），`_plan_text` 只剩查表；
+- 参数解析换成 argparse 子命令（30 个子命令 + 9 个全局开关），`paw click --help` 现在能看到用法；
+- 修：行动表在 `try` 外打印，少给参数会甩 `IndexError` traceback → 现在统一 `参数错误：…` + 退出码 2；
+- 修：`shot` 的预览文案与实际保存不是同一个文件（`paw shot a.png b.png`）；
+- 修：`uia --deep` 走 serve / MCP 时永远不生效（原来判断 `sys.argv`）；
+- 修：`run_one("start")` / `run_one("stop")` 只是空转返回 0；
+- 修：`--remote` 转发时 Windows 路径反斜杠被对面 `shlex` 吃掉（现在逐参数 `shlex.quote`）；
+- 修：`web` 预览文案里混进端口号；
+- 修：`uia-click` 的控件名带空格时被重新切开；
+- 全部踩过的坑整理进 [docs/PITFALLS.md](docs/PITFALLS.md)。
+
 ## v2.2
 
 **依赖从 8 个减到 1 个：只留 Pillow。**

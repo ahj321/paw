@@ -315,7 +315,7 @@ def _uia_rect_text(r) -> str:
     return f"({r.left},{r.top})-({r.right},{r.bottom})"
 
 
-def _do_uia(kw: str) -> int:
+def _do_uia(kw: str, deep: bool = False) -> int:
     auto = _uia_import()
     win = _uia_window(auto, kw)
     if not win.Exists(3):
@@ -332,7 +332,7 @@ def _do_uia(kw: str) -> int:
         except Exception:
             continue
     print(f"共 {rows} 个直接子控件（要更深就加 --deep）")
-    if "--deep" in sys.argv:
+    if deep:
         for c in win.GetChildren():
             try:
                 for sub in c.GetChildren():
@@ -614,10 +614,8 @@ def _xy(a: list):
 
 
 def _plan_shot(a: list, ns) -> str:
-    if a and not a[0].startswith("--"):
-        target = a[0]
-    else:
-        target = "临时目录（自动保留最近 %d 张）" % SHOT_KEEP
+    words = [w for w in a if not w.startswith("--")]
+    target = words[-1] if words else "临时目录（自动保留最近 %d 张）" % SHOT_KEEP
     return f"截屏并保存到 {target}（不改任何东西）"
 
 
@@ -1274,7 +1272,9 @@ def _remote_exec(port: str, cmd: str, args: list, as_json: bool) -> int:
     import json as _json
     import urllib.request
 
-    line = " ".join([cmd] + [str(a) for a in args])
+    import shlex as _shlex
+
+    line = " ".join(_shlex.quote(str(a)) for a in [cmd] + list(args))
     body = _json.dumps({"line": line}).encode("utf-8")
     url = f"http://127.0.0.1:{port}/api/action"
     req = urllib.request.Request(
@@ -1415,9 +1415,9 @@ _COMMANDS = {
     "focus": (lambda a, ns: _focus_cmd(a), None, 0),
     "wait": (_wait, None, 0),
     "goto": (lambda a, ns: _goto_cmd(a), None, 0),
-    "uia": (lambda a, ns: _do_uia(a[0] if a else ""), None, 0),
-    "start": (lambda a, ns: 0, None, 0),
-    "stop": (lambda a, ns: 0, None, 0),
+    "uia": (lambda a, ns: _do_uia(a[0] if a else "", bool(getattr(ns, "deep", False))), None, 0),
+    "start": (lambda a, ns: _do_start(int(a[0]) if a else 8000), None, 0),
+    "stop": (lambda a, ns: _do_stop(), None, 0),
     "clean": (_clean, None, 0),
     "web": (_web, None, 0),
     "web-click": (_web_click, None, 0),
@@ -1470,7 +1470,11 @@ def run_one(
         return 4
 
     if show_plan:
-        plan = _plan_text(cmd, args)
+        try:
+            plan = _plan_text(cmd, args)
+        except (IndexError, ValueError) as e:
+            print(f"参数错误：{e}", file=sys.stderr)
+            return 2
         print(f"计划：{plan + '  · ' + note if note else plan}", file=sys.stderr)
     if dry_run:
         return 0
