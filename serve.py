@@ -20,7 +20,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import pc
+import paw as pc
 
 LEVEL = {"v": os.environ.get("PC_LEVEL", "safe")}
 LOG = []

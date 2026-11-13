@@ -7,3 +7,6 @@ NUL
 dist/
 *.egg-info/
 build/
+
+.pawd.json
+@AutomationLog*.txt

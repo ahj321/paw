@@ -46,6 +46,7 @@ steps.txt 示例：
 
 import argparse
 import ctypes
+import json
 import os
 import shlex
 import subprocess
@@ -141,8 +142,10 @@ CMD_LEVEL = {
     "launch": "browse", "move": "browse",
     "desks": "browse", "desk": "browse", "screens": "browse", "watch": "browse",
     "focus": "browse", "wait": "browse", "goto": "browse",
+    "uia": "browse", "start": "browse", "stop": "browse",
     "click": "safe", "dclick": "safe", "rclick": "safe", "scroll": "safe", "drag": "safe",
     "type": "safe", "key": "safe", "hotkey": "safe",
+    "uia-click": "safe",
 }
 ALL_CMDS = list(CMD_LEVEL.keys())
 
@@ -213,9 +216,91 @@ def _where(x: int, y: int) -> str:
     return f"（所在窗口：{win}）" if win else ""
 
 
+# --- UI Automation：按控件名找位置，不靠眼睛估坐标 -------------------------
+
+def _uia_import():
+    try:
+        import uiautomation as auto
+    except ImportError:
+        print("需要 uiautomation：pip install uiautomation", file=sys.stderr)
+        raise SystemExit(2)
+    return auto
+
+
+def _uia_window(auto, kw: str):
+    win = auto.WindowControl(searchDepth=1, SubName=kw)
+    if win.Exists(1):
+        return win
+    win = auto.WindowControl(searchDepth=1, Name=kw)
+    return win
+
+
+def _uia_rect_text(r) -> str:
+    return f"({r.left},{r.top})-({r.right},{r.bottom})"
+
+
+def _do_uia(kw: str) -> int:
+    auto = _uia_import()
+    win = _uia_window(auto, kw)
+    if not win.Exists(3):
+        print(f"没找到标题包含「{kw}」的窗口", file=sys.stderr)
+        return 1
+    print(f"窗口：{win.Name}  {_uia_rect_text(win.BoundingRectangle)}")
+    rows = 0
+    for c in win.GetChildren():
+        try:
+            name = c.Name or ""
+            rect = c.BoundingRectangle
+            print(f"  [{c.ControlTypeName}] {name!r} {_uia_rect_text(rect)}")
+            rows += 1
+        except Exception:
+            continue
+    print(f"共 {rows} 个直接子控件（要更深就加 --deep）")
+    if "--deep" in sys.argv:
+        for c in win.GetChildren():
+            try:
+                for sub in c.GetChildren():
+                    print(
+                        f"    ▸ [{sub.ControlTypeName}] {sub.Name!r} "
+                        f"{_uia_rect_text(sub.BoundingRectangle)}"
+                    )
+            except Exception:
+                continue
+    return 0
+
+
+def _do_uia_click(kw: str, name: str) -> int:
+    auto = _uia_import()
+    win = _uia_window(auto, kw)
+    if not win.Exists(3):
+        print(f"没找到标题包含「{kw}」的窗口", file=sys.stderr)
+        return 1
+    ctrl = auto.Control(searchFromControl=win, Name=name, searchDepth=12)
+    if not ctrl.Exists(3):
+        print(f"窗口「{win.Name}」里没找到名为「{name}」的控件", file=sys.stderr)
+        return 1
+    rect = ctrl.BoundingRectangle
+    print(f"控件：{ctrl.ControlTypeName} {ctrl.Name!r} {_uia_rect_text(rect)}")
+    try:
+        ctrl.Click()
+        return 0
+    except Exception as exc:
+        print(f"控件 Invoke 失败（{exc}），退回坐标点击中心", file=sys.stderr)
+        cx = (rect.left + rect.right) // 2
+        cy = (rect.top + rect.bottom) // 2
+        _click_at(cx, cy, "left", False)
+        return 0
+
+
 def _plan_text(cmd: str, args: list) -> str:
     if cmd == "size":
         return "读取屏幕分辨率（不改任何东西）"
+    if cmd == "uia":
+        return f"列出窗口「{args[0] if args else ''}」里的控件和坐标（不改任何东西）"
+    if cmd == "uia-click":
+        a = args[0] if args else ""
+        b = args[1] if len(args) > 1 else ""
+        return f"点击窗口「{a}」里名为「{b}」的控件（按控件找位置，不用估坐标）"
     if cmd == "scale":
         return "读取显示缩放比例（不改任何东西）"
     if cmd == "shot":
@@ -625,6 +710,136 @@ def _desk_cmd(args: list) -> int:
         return 1
 
 
+PAWD_PID = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".pawd.json")
+
+
+def _pawd_info():
+    try:
+        with open(PAWD_PID, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _pid_alive(pid: int) -> bool:
+    """判断进程还在不在（用 OpenProcess，比 tasklist 快 100ms）。"""
+    if not sys.platform.startswith("win"):
+        try:
+            os.kill(pid, 0)
+            return True
+        except Exception:
+            return False
+    try:
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x1000, False, int(pid))
+        if not handle:
+            return False
+        kernel32.CloseHandle(handle)
+        return True
+    except Exception:
+        return False
+
+
+def _pawd_alive() -> bool:
+    info = _pawd_info()
+    if not info:
+        return False
+    return _pid_alive(info.get("pid", 0))
+
+
+def _do_start(port: int) -> int:
+    if _pawd_alive():
+        print(f"已经在跑：127.0.0.1:{(_pawd_info() or {}).get('port')}")
+        return 0
+    import subprocess as sp
+    import urllib.request
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    flags = 0
+    if sys.platform.startswith("win"):
+        flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    p = sp.Popen(
+        [sys.executable, os.path.join(here, "serve.py"), str(port)],
+        creationflags=flags,
+        stdout=sp.DEVNULL,
+        stderr=sp.DEVNULL,
+        close_fds=True,
+    )
+    with open(PAWD_PID, "w", encoding="utf-8") as f:
+        json.dump({"pid": p.pid, "port": port}, f)
+    ready = False
+    for _ in range(40):
+        try:
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/action",
+                data=b'{"line":"size"}',
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=1).read()
+            ready = True
+            break
+        except Exception:
+            time.sleep(0.2)
+    if ready:
+        print(f"已启动：127.0.0.1:{port}（pid {p.pid}），之后每条命令 ~9ms")
+        return 0
+    print("启动失败：服务没响应", file=sys.stderr)
+    return 1
+
+
+def _do_stop() -> int:
+    info = _pawd_info()
+    if not info:
+        print("没有在跑的服务")
+        return 0
+    import subprocess as sp
+
+    sp.run(["taskkill", "/PID", str(info["pid"]), "/F"], capture_output=True)
+    try:
+        os.remove(PAWD_PID)
+    except Exception:
+        pass
+    print(f"已关闭（pid {info['pid']}）")
+    return 0
+
+
+def _remote_exec(port: str, cmd: str, args: list, as_json: bool) -> int:
+    """把一条命令转发给常驻服务（serve.py），省掉每次解释器冷启动。"""
+    import json as _json
+    import urllib.request
+
+    line = " ".join([cmd] + [str(a) for a in args])
+    body = _json.dumps({"line": line}).encode("utf-8")
+    url = f"http://127.0.0.1:{port}/api/action"
+    req = urllib.request.Request(
+        url, data=body, headers={"Content-Type": "application/json"}, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode("utf-8", "replace")
+    except Exception as exc:
+        print(f"常驻服务没在 127.0.0.1:{port} 上（{exc}）——先跑 python serve.py {port}", file=sys.stderr)
+        return 1
+
+    try:
+        data = _json.loads(raw)
+    except Exception:
+        print(raw)
+        return 0
+
+    if as_json:
+        print(_json.dumps(data, ensure_ascii=False))
+        return 0 if data.get("ok") else 1
+    out = (data.get("out") or "").strip()
+    err = (data.get("err") or "").strip()
+    if out:
+        print(out)
+    if err:
+        print(err, file=sys.stderr)
+    return 0 if data.get("ok") else 1
+
+
 def run_one(
     cmd: str, args: list, level: str, show_plan: bool, dry_run: bool, note: str = ""
 ) -> int:
@@ -684,6 +899,15 @@ def run_one(
             s = _dpi_scale()
             print(f"缩放 {s:.2f}x（{int(s * 100)}%）：物理 {w}x{h}，逻辑 {int(w / s)}x{int(h / s)}")
             print("shot 与 click 都用物理像素；按缩略图/预览图估坐标时，先乘这个比例。")
+
+        elif cmd == "uia":
+            return _do_uia(args[0] if args else "")
+
+        elif cmd == "uia-click":
+            if len(args) < 2:
+                print("用法：paw.py uia-click <窗口标题关键词> <控件名>", file=sys.stderr)
+                return 2
+            return _do_uia_click(args[0], " ".join(args[1:]))
 
         elif cmd == "shot":
             rest = args
@@ -839,6 +1063,13 @@ def main() -> int:
     ap.add_argument("--json", action="store_true", help="以 JSON 输出结果（方便 agent 解析）")
     ap.add_argument("--dry-run", action="store_true", help="只打印行动表，不执行")
     ap.add_argument(
+        "--remote",
+        nargs="?",
+        const=os.environ.get("PAW_REMOTE", "8000"),
+        default=None,
+        help="转发给常驻服务执行（快 20 倍）：--remote 8899，或设 PAW_REMOTE",
+    )
+    ap.add_argument(
         "--parallel",
         action="store_true",
         help="run 时并行执行「打开/查看」类步骤（鼠标键盘动作仍串行，否则会打架）",
@@ -846,6 +1077,15 @@ def main() -> int:
     a, extra = ap.parse_known_args()
     if extra:
         a.args = list(a.args) + list(extra)
+
+    if a.remote:
+        return _remote_exec(a.remote, a.cmd, a.args, a.json)
+
+    if a.cmd == "start":
+        return _do_start(int(a.args[0]) if a.args else 8000)
+    if a.cmd == "stop":
+        return _do_stop()
+
     if a.delay:
         time.sleep(a.delay)
     if a.pause >= 0:
