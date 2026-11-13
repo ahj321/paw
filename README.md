@@ -2,7 +2,11 @@
 
 [![CI](https://github.com/ahj321/paw/actions/workflows/ci.yml/badge.svg)](https://github.com/ahj321/paw/actions/workflows/ci.yml)
 
-**进一步提升 AI 的手：看屏幕、点按钮、打字，全是一条命令的事。**
+**给 agent 一双手：补上最后三公里。**
+
+agent 已经会读代码、写文档，却还差最后三公里——**真的替你把那个按钮点下去**。paw 补的就是这一段：一条命令截屏、点击、打字、切窗口。
+
+它不绑定任何一家 agent：**命令行就是接口**，MCP 只是可选的加菜。粘一段配置，也能挂进 Claude Desktop / Cursor / Cline / Continue。
 
 [English](README.en.md) · 中文
 
@@ -16,9 +20,8 @@
 | 控件 | `uia` / `uia-click` | 问 Windows 要控件矩形，精确到像素 | 桌面软件、缩放屏、窗口被挡 |
 | 网页 | `web` / `web-click` | 问浏览器要元素位置，不用截图 | 浏览器里点按钮、填表 |
 
-- **零配置**：没有服务要起、没有账号要登、不用申请 key；
+- **零依赖**：`pip install pyautogui pillow` 两条就够，没有服务要起、没有账号要登、不用申请 key；
 - **可离线**：工具本身不联网，只有调模型那一步才需要网；
-- **命令行直接用，也能当插件**：agent 拿着命令行就能跑；想挂进 Claude Desktop / Cursor / Cline / Continue，粘一段 MCP 配置就成；
 - **越点越准**：先猜像素，猜不准就升级到「问系统」（uia）或「问浏览器」（web）——同一个工具，三种问法；
 - **看得见**：执行前打印行动表，坐标落在哪个窗口、点在什么按钮上，说得清清楚楚。
 
@@ -51,6 +54,52 @@ python paw.py shot s.png    # 截一张屏
 挂进 agent 只要一段配置：
 
 ![MCP 配置](docs/mcp.png)
+
+## 在 agent 里用（MCP）
+
+`paw_mcp.py` 是一个 MCP server，把命令包成工具（`screenshot`、`click`、`type_text`、`focus_window`…）。**只要客户端说 MCP，就不用改任何 paw 的代码。**
+
+先装 MCP SDK：
+
+```bash
+pip install "mcp[cli]"
+```
+
+然后在客户端里加一段配置（路径换成你自己的）：
+
+**Claude Desktop**（`claude_desktop_config.json`）
+
+```json
+{
+  "mcpServers": {
+    "paw": {
+      "command": "python",
+      "args": ["D:/tools/paw/paw_mcp.py"]
+    }
+  }
+}
+```
+
+**Cursor**（`.cursor/mcp.json`，项目或全局）
+
+```json
+{
+  "mcpServers": {
+    "paw": {
+      "command": "python",
+      "args": ["D:/tools/paw/paw_mcp.py"]
+    }
+  }
+}
+```
+
+**Cline / Continue / Windsurf**：同样填 `command = python`、`args = ["<你的路径>/paw_mcp.py"]`，走 stdio。各家字段名可能叫 `mcpServers`、`servers` 或 `mcp`，内容一样。
+
+加完重启客户端，应该能看到 14 个工具：`screen_size`、`display_scale`、`screenshot`、`click`、`move`、`drag`、`type_text`、`press_key`、`press_hotkey`、`scroll`、`focus_window`、`list_windows`、`launch`、`wait`。
+
+不接 MCP 也能用——`SKILL.md` 是给 agent 读的说明书，告诉它命令表和什么时候该动手。
+
+页面上显示每块桌面的窗口、前台窗口、鼠标位置和空闲秒数，提供了一个动作输入框（同一套语法与权限）、权限切换，以及**急停**按钮——点下去后所有动作都被拒绝，再点一次解除。
 
 ## 安装
 
@@ -273,52 +322,6 @@ python serve.py --host 0.0.0.0   # 让局域网能访问
 ```
 
 目前只有命令行和这个看板两种形态：给 agent 用不需要界面，想盯着看时起 `serve.py`，它和命令行共用同一套动作与权限。
-
-## 在 agent 里用（MCP）
-
-`paw_mcp.py` 是一个 MCP server，把命令包成工具（`screenshot`、`click`、`type_text`、`focus_window`…）。**只要客户端说 MCP，就不用改任何 paw 的代码。**
-
-先装 MCP SDK：
-
-```bash
-pip install "mcp[cli]"
-```
-
-然后在客户端里加一段配置（路径换成你自己的）：
-
-**Claude Desktop**（`claude_desktop_config.json`）
-
-```json
-{
-  "mcpServers": {
-    "paw": {
-      "command": "python",
-      "args": ["D:/tools/paw/paw_mcp.py"]
-    }
-  }
-}
-```
-
-**Cursor**（`.cursor/mcp.json`，项目或全局）
-
-```json
-{
-  "mcpServers": {
-    "paw": {
-      "command": "python",
-      "args": ["D:/tools/paw/paw_mcp.py"]
-    }
-  }
-}
-```
-
-**Cline / Continue / Windsurf**：同样填 `command = python`、`args = ["<你的路径>/paw_mcp.py"]`，走 stdio。各家字段名可能叫 `mcpServers`、`servers` 或 `mcp`，内容一样。
-
-加完重启客户端，应该能看到 14 个工具：`screen_size`、`display_scale`、`screenshot`、`click`、`move`、`drag`、`type_text`、`press_key`、`press_hotkey`、`scroll`、`focus_window`、`list_windows`、`launch`、`wait`。
-
-不接 MCP 也能用——`SKILL.md` 是给 agent 读的说明书，告诉它命令表和什么时候该动手。
-
-页面上显示每块桌面的窗口、前台窗口、鼠标位置和空闲秒数，提供了一个动作输入框（同一套语法与权限）、权限切换，以及**急停**按钮——点下去后所有动作都被拒绝，再点一次解除。
 
 ## 和视觉模型一起用
 

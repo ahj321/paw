@@ -2,7 +2,11 @@
 
 [![CI](https://github.com/ahj321/paw/actions/workflows/ci.yml/badge.svg)](https://github.com/ahj321/paw/actions/workflows/ci.yml)
 
-**A step further for your AI's hands: look at the screen, click the button, type the text — one command at a time.**
+**A pair of hands for your agent: the last three kilometres.**
+
+Your agent can already read code and write docs. What it can't do is push the button for you — the last three kilometres. That's the gap paw fills: screenshot, click, type, switch windows, one command at a time.
+
+It isn't tied to any single agent: **the command line is the interface**, MCP is an optional extra. Paste one config block and it also works inside Claude Desktop, Cursor, Cline or Continue.
 
 [中文](README.md) · English
 
@@ -16,9 +20,8 @@ The model does the looking, paw does the moving. Three levels of precision — p
 | Controls | `uia` / `uia-click` | Windows reports the control's rectangle, pixel exact | desktop apps, scaled displays, covered windows |
 | Web | `web` / `web-click` | the browser reports element positions, no screenshot | buttons and forms inside a browser |
 
-- **Zero setup**: no server to run, no account to create, no API key to request;
+- **Zero dependencies**: `pip install pyautogui pillow` and you're done — no server to run, no account, no API key;
 - **Works offline**: only the model call needs the network;
-- **CLI first, plugin whenever you want**: an agent can run the commands as they are; to hang it inside Claude Desktop, Cursor, Cline or Continue, paste one MCP config block;
 - **Gets more exact on demand**: guess pixels first, then escalate to asking Windows (uia) or the browser (web) — same tool, three ways to ask;
 - **Nothing hidden**: every command prints its plan first, including which window the coordinates land in.
 
@@ -52,6 +55,35 @@ Multi-step actions go in a `steps.txt`; `run` prints the plan for every step bef
 Plugging it into an agent is one config block:
 
 ![MCP config](docs/mcp.png)
+
+## With an agent (MCP)
+
+`paw_mcp.py` is an MCP server that wraps the commands as tools (`screenshot`, `click`, `type_text`, `focus_window`, —. **If your client speaks MCP, you don't change any paw code.**
+
+```bash
+pip install "mcp[cli]"
+```
+
+Then add a server entry to your client config (adjust the path):
+
+**Claude Desktop** (`claude_desktop_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "paw": {
+      "command": "python",
+      "args": ["D:/tools/paw/paw_mcp.py"]
+    }
+  }
+}
+```
+
+**Cursor** (`.cursor/mcp.json`), **Cline**, **Continue**, **Windsurf**: same idea —`command = python`, `args = ["<path>/paw_mcp.py"]`, stdio transport. The field may be called `mcpServers`, `servers` or `mcp` depending on the client.
+
+Restart the client and you should see 14 tools: `screen_size`, `display_scale`, `screenshot`, `click`, `move`, `drag`, `type_text`, `press_key`, `press_hotkey`, `scroll`, `focus_window`, `list_windows`, `launch`, `wait`.
+
+You can also skip MCP entirely: `SKILL.md` is a plain instruction file for agents that tells them the command table and when to reach for it.
 
 ## Install
 
@@ -266,35 +298,6 @@ The intended setup is an agent with a **vision-capable model API**: hand it the 
 4. repeat.
 
 `shot` and `click` both use physical pixels, so screenshot coordinates work directly. Coordinates estimated from a thumbnail or a chat preview do **not** —run `python paw.py scale` (e.g. at 150% you multiply preview coordinates by 1.5).
-
-## With an agent (MCP)
-
-`paw_mcp.py` is an MCP server that wraps the commands as tools (`screenshot`, `click`, `type_text`, `focus_window`, —. **If your client speaks MCP, you don't change any paw code.**
-
-```bash
-pip install "mcp[cli]"
-```
-
-Then add a server entry to your client config (adjust the path):
-
-**Claude Desktop** (`claude_desktop_config.json`)
-
-```json
-{
-  "mcpServers": {
-    "paw": {
-      "command": "python",
-      "args": ["D:/tools/paw/paw_mcp.py"]
-    }
-  }
-}
-```
-
-**Cursor** (`.cursor/mcp.json`), **Cline**, **Continue**, **Windsurf**: same idea —`command = python`, `args = ["<path>/paw_mcp.py"]`, stdio transport. The field may be called `mcpServers`, `servers` or `mcp` depending on the client.
-
-Restart the client and you should see 14 tools: `screen_size`, `display_scale`, `screenshot`, `click`, `move`, `drag`, `type_text`, `press_key`, `press_hotkey`, `scroll`, `focus_window`, `list_windows`, `launch`, `wait`.
-
-You can also skip MCP entirely: `SKILL.md` is a plain instruction file for agents that tells them the command table and when to reach for it.
 
 ## FAQ
 
