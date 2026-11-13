@@ -20,7 +20,7 @@ agent 已经会读代码、写文档，却还差最后三公里——**真的替
 | 控件 | `uia` / `uia-click` | 问 Windows 要控件矩形，精确到像素 | 桌面软件、缩放屏、窗口被挡 |
 | 网页 | `web` / `web-click` | 问浏览器要元素位置，不用截图 | 浏览器里点按钮、填表 |
 
-- **配置少**：`pip install pyautogui pillow` 两条就够，没有服务要起、没有账号要登、不用申请 key；
+- **依赖只有两条**：`pip install pyautogui pillow`——没有服务、没有账号、不用申请 key；
 - **本体本地无需联网**：工具本身完全不联网，只有调模型那一步才需要网；
 - **接 agent 只要一段配置**：自带 MCP server，Claude Desktop / Cursor / Cline / Continue 粘上就接好；
 - **看得见**：执行前打印行动表，坐标落在哪个窗口、点在什么按钮上，说得清清楚楚。
