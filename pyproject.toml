@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "paw-control"
-version = "2.3.0"
-description = "进一步提升 AI 的手：看屏幕、点按钮、打字，一条命令做一件事。A tiny CLI + MCP server that gives vision models and agents real hands."
-readme = "README.md"
+version = "2.3.2"
+description = "A pair of hands for your agent: screenshot, click, type. One command, one thing. A tiny CLI + MCP server for vision models."
+readme = "README.pypi.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "ahj321" }]
